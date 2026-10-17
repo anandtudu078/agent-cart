@@ -77,6 +77,13 @@ npm run dev             # dashboard on http://localhost:3000
 | `MONGODB_URI` | local `mongodb://127.0.0.1:27017/agentcart` | Atlas `mongodb+srv://…` or standard string |
 | `PAYPAL_MODE` / `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | — | sandbox by default |
 | `AGENT_SERVICE_URL` | `http://localhost:8000` | future Python agent |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | frontend → backend base URL |
+
+## API
+
+- `GET /api/health` — liveness + database state
+- `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
+- `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
 
 ## Data model
 

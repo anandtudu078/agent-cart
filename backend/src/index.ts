@@ -3,6 +3,7 @@ import cors from "cors";
 import { env } from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import { healthRouter } from "./routes/health.js";
+import { activityRouter } from "./routes/activity.js";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // --- Routes -----------------------------------------------------------------
 app.use("/api", healthRouter);
+app.use("/api", activityRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {

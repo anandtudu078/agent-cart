@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { API_BASE } from "./api";
 
 export interface ActivityLine {
   id: number;
@@ -9,7 +10,6 @@ export interface ActivityLine {
   message: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const MAX_LINES = 40;
 
 /** Live tail of /api/activity/stream (SSE), capped at MAX_LINES. */

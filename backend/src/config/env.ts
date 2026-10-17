@@ -19,6 +19,16 @@ function mongoUri(): string {
   return "mongodb://127.0.0.1:27017/agentcart";
 }
 
+function jwtSecret(): string {
+  const secret = process.env.JWT_SECRET?.trim();
+  if (secret) return secret;
+  if (nodeEnv === "production") {
+    throw new Error("JWT_SECRET must be set in production");
+  }
+  // dev-only fallback; sessions are invalidated anyway on secret rotation
+  return "agentcart-dev-secret";
+}
+
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 4000),
@@ -33,4 +43,5 @@ export const env = {
     clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
   },
   agentServiceUrl: process.env.AGENT_SERVICE_URL ?? "http://localhost:8000",
+  jwt: { secret: jwtSecret() },
 } as const;

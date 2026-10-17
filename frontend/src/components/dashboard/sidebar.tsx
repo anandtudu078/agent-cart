@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { watchedItems, historyEntries, type WatchStatus } from "@/lib/mock-data";
 import { MiniActivity } from "./mini-activity";
+import { AuthFooter } from "./auth-footer";
 
 const NAV = [
   { href: "#overview", label: "Overview", icon: LayoutDashboard },
@@ -148,8 +149,9 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Agent status */}
-      <div className="border-t border-panel-border px-5 py-4">
+      {/* Session + agent status */}
+      <div className="flex flex-col gap-3 border-t border-panel-border px-5 py-4">
+        <AuthFooter />
         <div className="flex items-center gap-2 text-xs text-zinc-300">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />

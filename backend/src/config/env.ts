@@ -1,0 +1,36 @@
+import "dotenv/config";
+
+const nodeEnv = process.env.NODE_ENV ?? "development";
+
+/**
+ * Accepts both `mongodb://host:27017/db` and Atlas `mongodb+srv://…` URIs.
+ * In development it falls back to the local Docker MongoDB; in production a
+ * missing/empty MONGODB_URI is a hard startup error so we never silently
+ * point a deployed app at localhost.
+ */
+function mongoUri(): string {
+  const uri = process.env.MONGODB_URI?.trim();
+  if (uri) return uri;
+  if (nodeEnv === "production") {
+    throw new Error(
+      "MONGODB_URI must be set in production (mongodb+srv://… from MongoDB Atlas)",
+    );
+  }
+  return "mongodb://127.0.0.1:27017/agentcart";
+}
+
+export const env = {
+  nodeEnv,
+  port: Number(process.env.PORT ?? 4000),
+  corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  mongoUri: mongoUri(),
+  paypal: {
+    mode: (process.env.PAYPAL_MODE ?? "sandbox") as "sandbox" | "live",
+    clientId: process.env.PAYPAL_CLIENT_ID ?? "",
+    clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
+  },
+  agentServiceUrl: process.env.AGENT_SERVICE_URL ?? "http://localhost:8000",
+} as const;

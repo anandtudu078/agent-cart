@@ -9,3 +9,4 @@ export {
   activityEventSchema,
   type ActivityEventDoc,
 } from "./ActivityEvent.js";
+export { User, userSchema, type UserDoc } from "./User.js";

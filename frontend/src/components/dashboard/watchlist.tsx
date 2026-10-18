@@ -1,10 +1,12 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useWatchItems } from "@/lib/use-watch-items";
+import { AddWatchItemForm } from "./add-watch-item-form";
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
-  const { items, loading } = useWatchItems();
+  const { items, loading, add, remove } = useWatchItems();
 
   if (loading) {
     return (
@@ -16,14 +18,19 @@ export function Watchlist() {
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-panel-border bg-panel/60 p-8 text-center font-mono text-sm text-muted">
-        no watch items yet — seed demo data with <code>npm run seed</code>
+      <div className="flex flex-col items-start gap-3">
+        <div className="w-full rounded-xl border border-panel-border bg-panel/60 p-8 text-center font-mono text-sm text-muted">
+          no watch items yet — add your first one
+        </div>
+        <AddWatchItemForm onAdd={add} />
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
+    <>
+      <AddWatchItemForm onAdd={add} />
+      <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-panel-border text-left text-[11px] uppercase tracking-wider text-muted">
@@ -34,6 +41,7 @@ export function Watchlist() {
             <th className="px-4 py-3 text-right font-medium">24h</th>
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 text-right font-medium">Updated</th>
+            <th className="px-4 py-3 text-right font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -75,10 +83,25 @@ export function Watchlist() {
               <td className="px-4 py-3 text-right font-mono text-[11px] text-muted">
                 {item.updated}
               </td>
+              <td className="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  aria-label={`Stop watching ${item.title}`}
+                  onClick={() => {
+                    if (window.confirm(`Stop watching “${item.title}”?`)) {
+                      void remove(item.id);
+                    }
+                  }}
+                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

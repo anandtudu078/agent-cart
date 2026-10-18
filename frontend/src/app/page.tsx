@@ -7,21 +7,15 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { ActivityLog } from "@/components/dashboard/activity-log";
+import { HistoryFeed } from "@/components/dashboard/history-feed";
 import { Watchlist } from "@/components/dashboard/watchlist";
-import { historyEntries, stats } from "@/lib/mock-data";
+import { stats } from "@/lib/mock-data";
 
 const ICONS = {
   eye: Eye,
   trend: TrendingDown,
   bot: Bot,
   cart: ShoppingCart,
-} as const;
-
-const HISTORY_DOT = {
-  buy: "bg-fuchsia-400",
-  alert: "bg-cyan-400",
-  scan: "bg-zinc-500",
-  info: "bg-emerald-400",
 } as const;
 
 function SectionHeading({
@@ -108,31 +102,7 @@ export default function Home() {
           hint="recent agent decisions"
           icon={HistoryIcon}
         />
-        <ul className="flex flex-col gap-2">
-          {historyEntries.map((entry) => (
-            <li
-              key={entry.id}
-              className="flex items-start gap-3 rounded-lg border border-panel-border bg-panel/60 px-4 py-3"
-            >
-              <span
-                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${HISTORY_DOT[entry.kind]}`}
-                aria-hidden
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-zinc-200">
-                  {entry.action}
-                  <span className="text-muted"> — {entry.item}</span>
-                </p>
-                <p className="mt-0.5 font-mono text-xs text-muted">
-                  {entry.detail}
-                </p>
-              </div>
-              <time className="font-mono text-[11px] text-muted">
-                {entry.at}
-              </time>
-            </li>
-          ))}
-        </ul>
+        <HistoryFeed />
       </section>
 
       {/* Live activity log */}

@@ -24,7 +24,7 @@ Built today:
 | Database | ✅ MongoDB Atlas M0 (prod-ready), local Docker Mongo for dev |
 | Agent service | 🔜 Python/LangChain poller/scraping brain (not yet scaffolded) |
 | Commerce | 🔜 PayPal checkout route (`@paypal/checkout-server-sdk` installed) |
-| API surface | ✅ watch-item CRUD routes (history routes still 🔜) |
+| API surface | ✅ watch-item CRUD + history routes |
 
 ## Architecture
 
@@ -88,6 +88,8 @@ npm run dev             # dashboard on http://localhost:3000
 - `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}`
 - `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, or `status`
 - `DELETE /api/watch-items/:id` — stop watching
+- `GET /api/history` — recent agent decisions, newest first (`?limit=1..100`, `?kind=buy|alert|scan|info`)
+- `POST /api/history` — record a decision `{itemTitle, action, detail, kind}`
 
 ## Data model
 

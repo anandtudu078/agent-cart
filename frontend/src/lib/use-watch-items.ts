@@ -41,7 +41,15 @@ function timeAgo(iso?: string): string {
   return `${Math.floor(hr / 24)}d ago`;
 }
 
-/** Live watchlist from GET /api/watch-items. */
+/** Fields the create form sends to POST /api/watch-items. */
+export interface NewWatchItem {
+  title: string;
+  retailer: string;
+  price: number;
+  targetPrice: number;
+}
+
+/** Live watchlist from GET /api/watch-items, with add/remove mutations. */
 export function useWatchItems() {
   const [items, setItems] = useState<WatchedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,5 +78,48 @@ export function useWatchItems() {
 
   useEffect(refresh, [refresh]);
 
-  return { items, loading, refresh };
+  /** POST a new watch item; returns an error message or null on success. */
+  const add = useCallback(
+    async (input: NewWatchItem): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/watch-items`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "Could not add the item — is the API running?";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
+  /** DELETE a watch item; returns true on success. */
+  const remove = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/watch-items/${id}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setItems((prev) => prev.filter((item) => item.id !== id));
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  return { items, loading, refresh, add, remove };
 }

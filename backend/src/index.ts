@@ -6,6 +6,7 @@ import { connectDB } from "./config/db.js";
 import { healthRouter } from "./routes/health.js";
 import { activityRouter } from "./routes/activity.js";
 import { authRouter } from "./routes/auth.js";
+import { watchItemsRouter } from "./routes/watch-items.js";
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.use(cookieParser());
 app.use("/api", healthRouter);
 app.use("/api", activityRouter);
 app.use("/api", authRouter);
+app.use("/api", watchItemsRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {

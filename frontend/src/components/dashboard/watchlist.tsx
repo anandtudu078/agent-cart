@@ -1,12 +1,16 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ShoppingCart, Trash2 } from "lucide-react";
+import { useCart } from "@/lib/use-cart";
 import { useWatchItems } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
   const { items, loading, add, remove } = useWatchItems();
+  const cart = useCart();
+  const [cartNotice, setCartNotice] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -30,6 +34,9 @@ export function Watchlist() {
   return (
     <>
       <AddWatchItemForm onAdd={add} />
+      {cartNotice && (
+        <p className="mb-2 text-xs text-amber-400">{cartNotice}</p>
+      )}
       <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
       <table className="w-full text-sm">
         <thead>
@@ -84,6 +91,18 @@ export function Watchlist() {
                 {item.updated}
               </td>
               <td className="px-4 py-3 text-right">
+                <span className="flex items-center justify-end gap-1">
+                <button
+                  type="button"
+                  aria-label={`Reserve ${item.title} in the cart`}
+                  disabled={cart.entries.some((e) => e.watchItemId === item.id)}
+                  onClick={() => {
+                    void cart.add(item.id).then((error) => setCartNotice(error));
+                  }}
+                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-cyan-500/10 hover:text-cyan-400 disabled:opacity-40"
+                >
+                  <ShoppingCart className="h-3.5 w-3.5" aria-hidden />
+                </button>
                 <button
                   type="button"
                   aria-label={`Stop watching ${item.title}`}
@@ -96,6 +115,7 @@ export function Watchlist() {
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden />
                 </button>
+                </span>
               </td>
             </tr>
           ))}

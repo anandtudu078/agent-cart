@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "./config/env.js";
-import { ActivityEvent, HistoryEntry, WatchItem } from "./models/index.js";
+import { ActivityEvent, CartEntry, HistoryEntry, WatchItem } from "./models/index.js";
 
 const RESET = process.argv.includes("--reset");
 
@@ -111,19 +111,22 @@ const ACTIVITY = [
 /**
  * Safe to run repeatedly: every row is upserted on a stable natural key, so
  * running the seed against a populated (e.g. Atlas) cluster never creates
- * duplicates. Pass --reset to wipe the three demo collections first.
+ * duplicates. Pass --reset to wipe the four demo collections first.
  */
 async function run(): Promise<void> {
   await mongoose.connect(env.mongoUri);
   console.log(`✓ connected — ${env.mongoUri}`);
 
   if (RESET) {
-    const [w, h, a] = await Promise.all([
+    const [w, h, a, c] = await Promise.all([
       WatchItem.deleteMany({}),
       HistoryEntry.deleteMany({}),
       ActivityEvent.deleteMany({}),
+      CartEntry.deleteMany({}),
     ]);
-    console.log(`  --reset cleared ${w.deletedCount}/${h.deletedCount}/${a.deletedCount} docs`);
+    console.log(
+      `  --reset cleared ${w.deletedCount}/${h.deletedCount}/${a.deletedCount}/${c.deletedCount} docs`,
+    );
   }
 
   let itemsCreated = 0;

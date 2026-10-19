@@ -1,6 +1,7 @@
-import { Activity, Eye, History as HistoryIcon } from "lucide-react";
+import { Activity, Eye, History as HistoryIcon, ShoppingCart } from "lucide-react";
 import { ActivityLog } from "@/components/dashboard/activity-log";
 import { AgentStatusBadge } from "@/components/dashboard/agent-status";
+import { CartSection } from "@/components/dashboard/cart-section";
 import { HistoryFeed } from "@/components/dashboard/history-feed";
 import { Stats } from "@/components/dashboard/stats";
 import { Watchlist } from "@/components/dashboard/watchlist";
@@ -68,6 +69,16 @@ export default function Home() {
           icon={HistoryIcon}
         />
         <HistoryFeed />
+      </section>
+
+      {/* Cart */}
+      <section>
+        <SectionHeading
+          title="Cart"
+          hint="reserved · PayPal checkout"
+          icon={ShoppingCart}
+        />
+        <CartSection />
       </section>
 
       {/* Live activity log */}

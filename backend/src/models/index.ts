@@ -10,3 +10,8 @@ export {
   type ActivityEventDoc,
 } from "./ActivityEvent.js";
 export { User, userSchema, type UserDoc } from "./User.js";
+export {
+  CartEntry,
+  cartEntrySchema,
+  type CartEntryDoc,
+} from "./CartEntry.js";

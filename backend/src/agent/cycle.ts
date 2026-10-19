@@ -1,5 +1,6 @@
 import { WatchItem, HistoryEntry, ActivityEvent } from "../models/index.js";
 import { env } from "../config/env.js";
+import { fetchPriceUpdates } from "./service.js";
 
 export interface CycleSummary {
   scanned: number;
@@ -76,10 +77,22 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
     const items = await WatchItem.find({ status: { $ne: "paused" } });
     await log("info", `cycle started — ${items.length} item(s) queued`);
 
+    // smart prices from the Python agent service; null → local jitter below
+    const service = await fetchPriceUpdates(
+      items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        retailer: item.retailer,
+        price: item.price,
+        targetPrice: item.targetPrice,
+      })),
+    );
+
     let drops = 0;
     for (const item of items) {
       const oldPrice = item.price;
-      const nextPrice = jittered(oldPrice);
+      const suggested = service?.updates.get(item.id)?.price;
+      const nextPrice = suggested ?? jittered(oldPrice);
       const wasDrop = item.status === "drop";
       const hitTarget = item.targetPrice > 0 && nextPrice <= item.targetPrice;
 
@@ -127,6 +140,12 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
     };
     lastCycleAt = new Date();
     lastSummary = summary;
+    await log(
+      "info",
+      service
+        ? `price source: agent-service (${service.source}, ${service.updates.size}/${items.length} items)`
+        : "price source: local jitter (agent service unreachable)",
+    );
     await log(
       "ok",
       `cycle completed — ${summary.scanned} item(s) scanned in ${summary.durationMs}ms, ${summary.drops} drop(s) flagged`,

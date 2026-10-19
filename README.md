@@ -22,7 +22,7 @@ Built today:
 | API (`backend/`) | ✅ Express 5 + TypeScript, CORS, env config, `GET /api/health` with DB state |
 | Data layer | ✅ Mongoose schemas (`watch_items`, `history_entries`, `activity_events` with TTL), retrying DB bootstrap, idempotent seed |
 | Database | ✅ MongoDB Atlas M0 (prod-ready), local Docker Mongo for dev |
-| Agent service | ✅ built-in Node scan loop (`AGENT_INTERVAL_SEC`, simulated price checks) · 🔜 Python/LangChain fetcher (not yet scaffolded) |
+| Agent service | ✅ Python/LangChain service (`agent-service/`, FastAPI on :8000) — LLM price reasoning when `OPENAI_API_KEY` is set, deterministic fallback otherwise; the Node scan cycle delegates to it and degrades to local jitter when it is down |
 | Commerce | ✅ cart hold/release + PayPal checkout/capture routes (`@paypal/checkout-server-sdk`, sandbox by default) |
 | API surface | ✅ watch-item CRUD + history routes |
 
@@ -37,6 +37,10 @@ agent-cart/
 │   ├── src/models     WatchItem · HistoryEntry · ActivityEvent
 │   ├── src/routes     /api/health
 │   └── src/seed.ts    idempotent demo data (--reset to wipe)
+├── agent-service/     Python price-decision service (FastAPI + LangChain, :8000)
+│   ├── main.py        GET /health · POST /scan {items} → price updates
+│   ├── scanner.py     LLM path (OpenAI-compatible) + ±3% fallback
+│   └── tests/         pytest self-checks
 ├── AGENTS.md          agent instructions — ponytail mode on by default
 └── .agents/skills/    ponytail coding skill
 ```
@@ -59,6 +63,19 @@ No Atlas yet? Run MongoDB locally in one line:
 docker run -d --name agentcart-mongo -p 27017:27017 mongo:7
 ```
 
+**Agent service (optional but recommended)**
+
+```bash
+cd agent-service
+python -m venv .venv && .venv/bin/pip install -r requirements.txt   # Windows: .venv\Scripts\pip
+uvicorn main:app --port 8000          # or: .venv/bin/uvicorn …
+# optional — enables LLM pricing (any OpenAI-compatible endpoint):
+#   set OPENAI_API_KEY (and optionally OPENAI_BASE_URL / AGENT_MODEL)
+```
+
+Without it (or without a key) the scan cycle keeps working on its built-in
+jitter — the activity log shows which price source each cycle used.
+
 **Frontend**
 
 ```bash
@@ -76,7 +93,7 @@ npm run dev             # dashboard on http://localhost:3000
 | `CORS_ORIGINS` | `http://localhost:3000` | comma-separated |
 | `MONGODB_URI` | local `mongodb://127.0.0.1:27017/agentcart` | Atlas `mongodb+srv://…` or standard string |
 | `PAYPAL_MODE` / `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | — | sandbox by default |
-| `AGENT_SERVICE_URL` | `http://localhost:8000` | future Python agent |
+| `AGENT_SERVICE_URL` | `http://localhost:8000` | Python agent service; scan cycles fall back to local jitter when unreachable |
 | `AGENT_INTERVAL_SEC` | `30` | seconds between scan cycles (min 5) |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | frontend → backend base URL |
 
@@ -100,8 +117,13 @@ returns 401.
 - `DELETE /api/cart/:id` — release a reserved item
 - `POST /api/cart/:id/checkout` — create a PayPal order, returns `{orderId, approvalUrl}` (501 when PayPal creds are unset)
 - `POST /api/cart/:id/capture` — capture an approved PayPal order
-- `GET /api/history` — recent agent decisions, newest first (`?limit=1..100`, `?kind=buy|alert|scan|info`)
+- `GET /api/history` — recent agent decisions, newest first (`?limit=1..100`, `?kind=buy|alert|scan|info`, `?item=<watchItemId>`)
 - `POST /api/history` — record a decision `{itemTitle, action, detail, kind}`
+
+Agent service (Python, port 8000, no auth — keep it on localhost):
+
+- `GET /health` — liveness + whether the LLM is configured
+- `POST /scan` — `{items: [{id, title, retailer, price, targetPrice}]}` → `{source: llm|fallback, updates: [{id, price, reason}]}` (every price clamped to ±3%)
 
 ## Data model
 

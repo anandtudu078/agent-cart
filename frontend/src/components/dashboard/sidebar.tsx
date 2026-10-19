@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   Activity,
@@ -6,7 +8,11 @@ import {
   LayoutDashboard,
   Pause,
 } from "lucide-react";
-import { watchedItems, historyEntries, type WatchStatus } from "@/lib/mock-data";
+import {
+  useWatchItems,
+  type WatchStatus,
+} from "@/lib/use-watch-items";
+import { useHistory } from "@/lib/use-history";
 import { MiniActivity } from "./mini-activity";
 import { AuthFooter } from "./auth-footer";
 
@@ -37,6 +43,9 @@ const HISTORY_DOT = {
 } as const;
 
 export function Sidebar() {
+  const { items, loading } = useWatchItems();
+  const { entries, loading: historyLoading } = useHistory();
+
   return (
     <aside className="flex h-full w-full flex-col border-r border-panel-border bg-panel/60">
       {/* Brand */}
@@ -73,12 +82,22 @@ export function Sidebar() {
             Watched items
           </p>
           <span className="rounded-full bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-muted">
-            {watchedItems.length}
+            {loading ? "…" : items.length}
           </span>
         </div>
 
         <ul className="flex min-h-0 flex-col gap-0.5 overflow-y-auto pb-3">
-          {watchedItems.map((item) => (
+          {loading && (
+            <li className="px-2.5 py-2 font-mono text-[11px] text-muted">
+              loading…
+            </li>
+          )}
+          {!loading && items.length === 0 && (
+            <li className="px-2.5 py-2 text-[12px] text-muted">
+              no items watched yet
+            </li>
+          )}
+          {items.map((item) => (
             <li key={item.id}>
               <div className="flex items-start gap-2.5 rounded-md px-2.5 py-2 transition-colors hover:bg-white/5">
                 <span className="mt-0.5 text-sm" aria-hidden>
@@ -119,7 +138,13 @@ export function Sidebar() {
           <HistoryIcon className="h-3.5 w-3.5 text-muted" aria-hidden />
         </div>
         <ul className="flex flex-col gap-1 px-2.5">
-          {historyEntries.slice(0, 3).map((entry) => (
+          {historyLoading && (
+            <li className="font-mono text-[11px] text-muted">loading…</li>
+          )}
+          {!historyLoading && entries.length === 0 && (
+            <li className="text-[12px] text-muted">no decisions yet</li>
+          )}
+          {entries.slice(0, 3).map((entry) => (
             <li key={entry.id} className="flex items-center gap-2">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${HISTORY_DOT[entry.kind]}`}
@@ -155,7 +180,7 @@ export function Sidebar() {
         <div className="flex items-center gap-2 text-xs text-zinc-300">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="absolute inline-flex h-2 w-2 rounded-full bg-emerald-400" />
           </span>
           Agent online
           <span className="ml-auto font-mono text-[11px] text-muted">

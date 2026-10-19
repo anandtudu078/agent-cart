@@ -1,22 +1,8 @@
-import {
-  Activity,
-  Bot,
-  Eye,
-  History as HistoryIcon,
-  ShoppingCart,
-  TrendingDown,
-} from "lucide-react";
+import { Activity, Eye, History as HistoryIcon } from "lucide-react";
 import { ActivityLog } from "@/components/dashboard/activity-log";
 import { HistoryFeed } from "@/components/dashboard/history-feed";
+import { Stats } from "@/components/dashboard/stats";
 import { Watchlist } from "@/components/dashboard/watchlist";
-import { stats } from "@/lib/mock-data";
-
-const ICONS = {
-  eye: Eye,
-  trend: TrendingDown,
-  bot: Bot,
-  cart: ShoppingCart,
-} as const;
 
 function SectionHeading({
   id,
@@ -52,35 +38,12 @@ export default function Home() {
               Good morning, operator
             </h1>
             <p className="mt-1 text-sm text-muted">
-              The agent is scanning 5 items every 30 seconds.
+              Watchlist, history, and stats below are live from the API.
             </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-panel-border bg-panel px-3 py-1.5 font-mono text-xs text-muted">
-            <Activity className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
-            next cycle in 30s
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = ICONS[stat.icon];
-            return (
-              <div
-                key={stat.label}
-                className="rounded-xl border border-panel-border bg-panel/60 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted">{stat.label}</p>
-                  <Icon className="h-4 w-4 text-muted" aria-hidden />
-                </div>
-                <p className="mt-2 font-mono text-2xl font-semibold tracking-tight">
-                  {stat.value}
-                </p>
-                <p className="mt-1 text-[11px] text-muted/80">{stat.hint}</p>
-              </div>
-            );
-          })}
-        </div>
+        <Stats />
       </section>
 
       {/* Watchlist */}

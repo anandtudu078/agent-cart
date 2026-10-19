@@ -18,7 +18,7 @@ Built today:
 
 | Piece | State |
 |---|---|
-| Dashboard (`frontend/`) | ✅ dark Next.js 16 + Tailwind v4 UI — watchlist, history, real-time agent log (currently mock data) |
+| Dashboard (`frontend/`) | ✅ dark Next.js 16 + Tailwind v4 UI — watchlist, history, stat cards, sidebar, real-time agent log — all live API data |
 | API (`backend/`) | ✅ Express 5 + TypeScript, CORS, env config, `GET /api/health` with DB state |
 | Data layer | ✅ Mongoose schemas (`watch_items`, `history_entries`, `activity_events` with TTL), retrying DB bootstrap, idempotent seed |
 | Database | ✅ MongoDB Atlas M0 (prod-ready), local Docker Mongo for dev |

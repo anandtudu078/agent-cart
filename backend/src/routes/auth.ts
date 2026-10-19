@@ -127,9 +127,16 @@ authRouter.patch("/settings", async (req, res) => {
     patch.priceAlerts = body.priceAlerts;
   }
 
+  // dotted paths: the fields live under the `settings` subdocument, and a
+  // flat $set would silently match nothing
+  const setOps: Record<string, string | boolean> = {};
+  if (patch.currency !== undefined) setOps["settings.currency"] = patch.currency;
+  if (patch.priceAlerts !== undefined)
+    setOps["settings.priceAlerts"] = patch.priceAlerts;
+
   const user = await User.findByIdAndUpdate(
     userId,
-    { $set: patch },
+    { $set: setOps },
     { new: true },
   ).lean();
   if (!user) {

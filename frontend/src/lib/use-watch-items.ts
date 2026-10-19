@@ -55,7 +55,7 @@ export function useWatchItems() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
-    fetch(`${API_BASE}/api/watch-items`)
+    fetch(`${API_BASE}/api/watch-items`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : { items: [] }))
       .then((data: { items?: RawItem[] }) => {
         setItems(
@@ -92,6 +92,7 @@ export function useWatchItems() {
         const res = await fetch(`${API_BASE}/api/watch-items`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify(input),
         });
         if (!res.ok) {
@@ -115,6 +116,7 @@ export function useWatchItems() {
       try {
         const res = await fetch(`${API_BASE}/api/watch-items/${id}`, {
           method: "DELETE",
+          credentials: "include",
         });
         if (res.ok) {
           setItems((prev) => prev.filter((item) => item.id !== id));

@@ -1,8 +1,10 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
 import { env } from "./config/env.js";
 import { connectDB } from "./config/db.js";
+import { requireAuth, writeLimiter } from "./middleware/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { activityRouter } from "./routes/activity.js";
 import { authRouter } from "./routes/auth.js";
@@ -14,7 +16,11 @@ import { startAgentLoop } from "./agent/cycle.js";
 
 const app = express();
 
+// hide the framework fingerprint
+app.disable("x-powered-by");
+
 // --- Middleware -------------------------------------------------------------
+app.use(helmet());
 app.use(
   cors({
     origin: env.corsOrigins,
@@ -27,13 +33,24 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // --- Routes -----------------------------------------------------------------
+// health stays public for liveness probes; auth routes carry their own limiter
 app.use("/api", healthRouter);
-app.use("/api", activityRouter);
-app.use("/api", authRouter);
-app.use("/api", watchItemsRouter);
-app.use("/api", historyRouter);
-app.use("/api", agentRouter);
-app.use("/api", cartRouter);
+// mounted at /api/auth so the auth limiter only covers the login/signup paths
+app.use("/api/auth", authRouter);
+
+// cap bulk writes so nobody can spam the DB through the API
+app.use("/api", (req, res, next) =>
+  ["POST", "PATCH", "PUT", "DELETE"].includes(req.method)
+    ? writeLimiter(req, res, next)
+    : next(),
+);
+
+// everything else requires a session cookie
+app.use("/api", requireAuth, activityRouter);
+app.use("/api", requireAuth, watchItemsRouter);
+app.use("/api", requireAuth, historyRouter);
+app.use("/api", requireAuth, agentRouter);
+app.use("/api", requireAuth, cartRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {
@@ -49,6 +66,23 @@ app.use(
     _next: express.NextFunction,
   ) => {
     console.error("[error]", err);
+    // Mongoose cast errors (bad ObjectId etc.) are client mistakes, not 500s
+    if (err.name === "CastError") {
+      res.status(400).json({ error: "invalid id" });
+      return;
+    }
+    const status = (err as { status?: number }).status;
+    if (status === 413) {
+      res.status(413).json({ error: "request body too large" });
+      return;
+    }
+    if (status === 400) {
+      res.status(400).json({
+        error:
+          env.nodeEnv === "production" ? "invalid request body" : err.message,
+      });
+      return;
+    }
     res.status(500).json({
       error: env.nodeEnv === "production" ? "Internal server error" : err.message,
     });

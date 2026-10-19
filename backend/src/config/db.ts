@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "./env.js";
+import { redactMongoUri } from "./log.js";
 
 const RETRY_DELAY_MS = 5_000;
 const MAX_RETRIES = 3;
@@ -45,7 +46,8 @@ export async function connectDB(): Promise<void> {
       autoIndex: env.nodeEnv !== "production",
     });
     retries = 0;
-    console.log(`✓ MongoDB connected — ${env.mongoUri}`);
+    // never log credentials — the URI carries the Atlas password
+    console.log(`✓ MongoDB connected — ${redactMongoUri(env.mongoUri)}`);
   } catch (err) {
     scheduleRetry(err instanceof Error ? err.message : String(err));
   }

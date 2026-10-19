@@ -22,7 +22,7 @@ export function useAgent() {
   const timer = useRef<number | null>(null);
 
   const refresh = useCallback(() => {
-    fetch(`${API_BASE}/api/agent/status`)
+    fetch(`${API_BASE}/api/agent/status`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: AgentStatus | null) => setStatus(data))
       .catch(() => setStatus(null));
@@ -55,6 +55,7 @@ export function useAgent() {
     try {
       const res = await fetch(`${API_BASE}/api/agent/scan`, {
         method: "POST",
+        credentials: "include",
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as {

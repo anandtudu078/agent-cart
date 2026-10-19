@@ -17,7 +17,12 @@ historyRouter.get("/history", async (req, res) => {
   const limit = Number.isFinite(rawLimit)
     ? Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_LIMIT)
     : DEFAULT_LIMIT;
-  const kind = typeof req.query.kind === "string" ? req.query.kind : undefined;
+  const kind = req.query.kind;
+  // reject operator payloads like ?kind[$ne]=x instead of silently ignoring them
+  if (kind !== undefined && typeof kind !== "string") {
+    res.status(400).json({ error: "kind must be a single string value" });
+    return;
+  }
   if (kind && !KINDS.includes(kind as (typeof KINDS)[number])) {
     res.status(400).json({ error: `kind must be one of ${KINDS.join(", ")}` });
     return;

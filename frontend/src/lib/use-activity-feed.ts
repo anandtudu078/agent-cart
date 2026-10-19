@@ -19,7 +19,10 @@ export function useActivityFeed() {
   const nextId = useRef(0);
 
   useEffect(() => {
-    const source = new EventSource(`${API_BASE}/api/activity/stream`);
+    // withCredentials: the stream is behind the session cookie now
+    const source = new EventSource(`${API_BASE}/api/activity/stream`, {
+      withCredentials: true,
+    });
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
     source.onmessage = (msg) => {

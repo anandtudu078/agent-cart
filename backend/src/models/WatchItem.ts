@@ -22,6 +22,8 @@ export const watchItemSchema = new Schema(
     },
     pollIntervalSec: { type: Number, default: 30, min: 5 },
     lastCheckedAt: { type: Date },
+    // optional so seeded demo rows stay shared; null = visible to any signed-in user
+    owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },
   {
     timestamps: true,

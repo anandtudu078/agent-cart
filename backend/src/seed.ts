@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "./config/env.js";
+import { redactMongoUri } from "./config/log.js";
 import { ActivityEvent, CartEntry, HistoryEntry, WatchItem } from "./models/index.js";
 
 const RESET = process.argv.includes("--reset");
@@ -115,7 +116,7 @@ const ACTIVITY = [
  */
 async function run(): Promise<void> {
   await mongoose.connect(env.mongoUri);
-  console.log(`✓ connected — ${env.mongoUri}`);
+  console.log(`✓ connected — ${redactMongoUri(env.mongoUri)}`);
 
   if (RESET) {
     const [w, h, a, c] = await Promise.all([

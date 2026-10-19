@@ -110,6 +110,34 @@ export function useWatchItems() {
     [refresh],
   );
 
+  /** PATCH a watch item (status/target); returns an error or null on success. */
+  const setItem = useCallback(
+    async (
+      id: string,
+      patch: { status?: WatchStatus; targetPrice?: number },
+    ): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/watch-items/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "could not update the item";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
   /** DELETE a watch item; returns true on success. */
   const remove = useCallback(
     async (id: string): Promise<boolean> => {
@@ -130,5 +158,5 @@ export function useWatchItems() {
     [],
   );
 
-  return { items, loading, refresh, add, remove };
+  return { items, loading, refresh, add, remove, setItem };
 }

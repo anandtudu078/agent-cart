@@ -7,6 +7,7 @@ import {
   History as HistoryIcon,
   LayoutDashboard,
   Pause,
+  Settings,
 } from "lucide-react";
 import {
   useWatchItems,
@@ -22,6 +23,7 @@ const NAV = [
   { href: "#watchlist", label: "Watchlist", icon: Eye },
   { href: "#history", label: "History", icon: HistoryIcon },
   { href: "#activity", label: "Agent activity", icon: Activity },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const STATUS_DOT: Record<WatchStatus, string> = {

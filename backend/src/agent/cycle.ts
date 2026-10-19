@@ -9,6 +9,8 @@ export interface CycleSummary {
 }
 
 let running = false;
+let intervalSec = env.agent.intervalSec;
+let loopTimer: ReturnType<typeof setInterval> | null = null;
 let lastCycleAt: Date | null = null;
 let lastSummary: CycleSummary | null = null;
 
@@ -20,16 +22,35 @@ const JITTER = 0.03;
 export function agentState() {
   return {
     running,
+    intervalSec,
     lastCycleAt: lastCycleAt?.toISOString() ?? null,
     lastSummary,
   };
 }
 
+/** Current scan interval in seconds (mutable via PATCH /api/agent/settings). */
+export function agentIntervalSec(): number {
+  return intervalSec;
+}
+
+/**
+ * Change the scan interval at runtime and restart the timer. Clamped by the
+ * caller; the loop only restarts when it was already started.
+ */
+export function setAgentIntervalSec(sec: number): void {
+  intervalSec = sec;
+  if (loopTimer) {
+    clearInterval(loopTimer);
+    loopTimer = setInterval(tick, sec * 1000).unref();
+  }
+}
+
 async function log(
   level: "info" | "ok" | "warn" | "buy",
   message: string,
+  alert = false,
 ): Promise<void> {
-  await ActivityEvent.create({ level, message, source: "agent-cycle" });
+  await ActivityEvent.create({ level, message, source: "agent-cycle", alert });
 }
 
 function jittered(price: number): number {
@@ -77,6 +98,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         action: "Target re-checked",
         detail: `$${nextPrice.toFixed(2)} at ${item.retailer} — ${targetGap(nextPrice, item.targetPrice)}`,
         kind: "scan",
+        price: nextPrice,
       });
 
       if (hitTarget && !wasDrop) {
@@ -87,10 +109,12 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           action: "Price drop detected",
           detail: `$${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} on ${item.retailer} (target $${item.targetPrice.toFixed(2)})`,
           kind: "alert",
+          price: nextPrice,
         });
         await log(
           "warn",
           `price drop: ${item.title} $${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} at ${item.retailer}`,
+          true, // surfaced as a toast/desktop notification on the dashboard
         );
       }
     }
@@ -126,7 +150,6 @@ function tick(): void {
 
 /** Start the interval loop; call once after the DB is connected. */
 export function startAgentLoop(): void {
-  const ms = env.agent.intervalSec * 1000;
-  console.log(`✓ Agent scan loop running every ${env.agent.intervalSec}s`);
-  setInterval(tick, ms).unref();
+  console.log(`✓ Agent scan loop running every ${intervalSec}s`);
+  loopTimer = setInterval(tick, intervalSec * 1000).unref();
 }

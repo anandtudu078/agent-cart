@@ -1,16 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { ShoppingCart, Trash2 } from "lucide-react";
+import { Fragment, useState } from "react";
+import { LineChart as ChartIcon, Pause, Play, ShoppingCart, Trash2 } from "lucide-react";
 import { useCart } from "@/lib/use-cart";
 import { useWatchItems } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
+import { PriceChart } from "./price-chart";
+import { formatPrice, useSettings } from "@/lib/use-settings";
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
-  const { items, loading, add, remove } = useWatchItems();
+  const { items, loading, add, remove, setItem } = useWatchItems();
+  const { settings } = useSettings();
   const cart = useCart();
   const [cartNotice, setCartNotice] = useState<string | null>(null);
+  // id of the item whose price chart row is open (null = all collapsed)
+  const [chartId, setChartId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -53,9 +58,9 @@ export function Watchlist() {
         </thead>
         <tbody>
           {items.map((item) => (
+            <Fragment key={item.id}>
             <tr
-              key={item.id}
-              className="border-b border-panel-border/60 last:border-0 transition-colors hover:bg-white/[0.03]"
+              className="border-b border-panel-border/60 transition-colors hover:bg-white/[0.03]"
             >
               <td className="px-4 py-3">
                 <span className="flex items-center gap-2.5">
@@ -65,10 +70,10 @@ export function Watchlist() {
               </td>
               <td className="px-4 py-3 text-muted">{item.retailer}</td>
               <td className="px-4 py-3 text-right font-mono">
-                ${item.price.toFixed(2)}
+                {formatPrice(item.price, settings.currency)}
               </td>
               <td className="px-4 py-3 text-right font-mono text-muted">
-                ${item.target.toFixed(2)}
+                {formatPrice(item.target, settings.currency)}
               </td>
               <td
                 className={`px-4 py-3 text-right font-mono ${
@@ -92,6 +97,34 @@ export function Watchlist() {
               </td>
               <td className="px-4 py-3 text-right">
                 <span className="flex items-center justify-end gap-1">
+                <button
+                  type="button"
+                  aria-label={
+                    item.status === "paused"
+                      ? `Resume scanning ${item.title}`
+                      : `Pause scanning ${item.title}`
+                  }
+                  onClick={() => {
+                    const next =
+                      item.status === "paused" ? "watching" : "paused";
+                    void setItem(item.id, { status: next });
+                  }}
+                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-cyan-500/10 hover:text-cyan-400"
+                >
+                  {item.status === "paused" ? (
+                    <Play className="h-3.5 w-3.5" aria-hidden />
+                  ) : (
+                    <Pause className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Toggle price history for ${item.title}`}
+                  onClick={() => setChartId(chartId === item.id ? null : item.id)}
+                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-cyan-500/10 hover:text-cyan-400"
+                >
+                  <ChartIcon className="h-3.5 w-3.5" aria-hidden />
+                </button>
                 <button
                   type="button"
                   aria-label={`Reserve ${item.title} in the cart`}
@@ -118,6 +151,14 @@ export function Watchlist() {
                 </span>
               </td>
             </tr>
+            {chartId === item.id && (
+              <tr className="border-b border-panel-border/60 last:border-0">
+                <td colSpan={8} className="px-4 py-3">
+                  <PriceChart itemId={item.id} title={item.title} target={item.target} />
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

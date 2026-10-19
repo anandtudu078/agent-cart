@@ -78,6 +78,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         action: "Target re-checked",
         detail: `$${nextPrice.toFixed(2)} at ${item.retailer} — ${targetGap(nextPrice, item.targetPrice)}`,
         kind: "scan",
+        price: nextPrice,
       });
 
       if (hitTarget && !wasDrop) {
@@ -88,6 +89,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           action: "Price drop detected",
           detail: `$${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} on ${item.retailer} (target $${item.targetPrice.toFixed(2)})`,
           kind: "alert",
+          price: nextPrice,
         });
         await log(
           "warn",

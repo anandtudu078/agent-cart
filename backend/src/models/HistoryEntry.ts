@@ -22,6 +22,8 @@ export const historyEntrySchema = new Schema(
       required: true,
       index: true,
     },
+    // price at the time of the decision — powers the per-item chart
+    price: { type: Number },
     occurredAt: { type: Date, default: Date.now, index: true },
   },
   {

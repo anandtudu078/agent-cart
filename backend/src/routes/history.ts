@@ -1,4 +1,5 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import { HistoryEntry } from "../models/index.js";
 
 export const historyRouter = Router();
@@ -10,7 +11,7 @@ const DEFAULT_LIMIT = 30;
 
 /**
  * GET /api/history — recent agent decisions, newest first.
- * Query: ?limit=1..100  &kind=buy|alert|scan|info
+ * Query: ?limit=1..100  &kind=buy|alert|scan|info  &item=<watchItemId>
  */
 historyRouter.get("/history", async (req, res) => {
   const rawLimit = Number(req.query.limit);
@@ -28,9 +29,23 @@ historyRouter.get("/history", async (req, res) => {
     return;
   }
 
+  const item = req.query.item;
+  if (item !== undefined && typeof item !== "string") {
+    res.status(400).json({ error: "item must be a single string value" });
+    return;
+  }
+  if (item && !mongoose.isValidObjectId(item)) {
+    res.status(400).json({ error: "item must be a valid watch item id" });
+    return;
+  }
+
   // filter built separately: a `cond ? {kind} : {}` union confuses Mongoose 9's FilterQuery
-  const filter: { kind?: (typeof KINDS)[number] } = {};
+  const filter: {
+    kind?: (typeof KINDS)[number];
+    item?: mongoose.Types.ObjectId;
+  } = {};
   if (kind) filter.kind = kind as (typeof KINDS)[number];
+  if (item) filter.item = new mongoose.Types.ObjectId(item);
   const entries = await HistoryEntry.find(filter)
     .sort({ occurredAt: -1 })
     .limit(limit)
@@ -45,6 +60,7 @@ historyRouter.post("/history", async (req, res) => {
     action?: string;
     detail?: string;
     kind?: string;
+    price?: number;
   };
 
   const kind = KINDS.find((candidate) => candidate === body.kind);
@@ -68,6 +84,7 @@ historyRouter.post("/history", async (req, res) => {
     action: body.action.trim(),
     detail: body.detail.trim(),
     kind,
+    price: typeof body.price === "number" ? body.price : undefined,
   });
   res.status(201).json({ entry });
 });

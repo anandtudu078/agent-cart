@@ -8,19 +8,23 @@ export type HistoryKind = "buy" | "alert" | "scan" | "info";
 export interface HistoryEntry {
   id: string;
   item: string;
+  itemId?: string;
   action: string;
   detail: string;
   kind: HistoryKind;
   at: string;
+  price?: number;
 }
 
 interface RawEntry {
   _id: string;
+  item?: string;
   itemTitle: string;
   action: string;
   detail: string;
   kind: HistoryKind;
   occurredAt: string;
+  price?: number;
 }
 
 // shortcut: 15s polling to pick up agent-cycle updates — switch to SSE when
@@ -40,12 +44,14 @@ export function useHistory() {
           (data.entries ?? []).map((entry) => ({
             id: entry._id,
             item: entry.itemTitle,
+            itemId: entry.item,
             action: entry.action,
             detail: entry.detail,
             kind: entry.kind,
             at: new Date(entry.occurredAt).toLocaleTimeString("en-US", {
               hour12: false,
             }),
+            price: entry.price,
           })),
         );
       })
@@ -60,4 +66,40 @@ export function useHistory() {
   }, [refresh]);
 
   return { entries, loading, refresh };
+}
+
+export interface PricePoint {
+  at: string;
+  price: number;
+}
+
+/**
+ * Fetch the price series for one watch item (for the chart). Bypasses the
+ * hook pattern — callers load it on demand inside their own component.
+ */
+export async function fetchItemSeries(
+  itemId: string,
+): Promise<PricePoint[] | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/history?item=${encodeURIComponent(itemId)}&limit=100`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { entries?: RawEntry[] };
+    // oldest first so the chart reads left-to-right in time
+    return (data.entries ?? [])
+      .filter((entry) => typeof entry.price === "number")
+      .map((entry) => ({
+        at: new Date(entry.occurredAt).toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        price: entry.price!,
+      }))
+      .reverse();
+  } catch {
+    return null;
+  }
 }

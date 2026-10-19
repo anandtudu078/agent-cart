@@ -12,6 +12,7 @@ import {
   useWatchItems,
   type WatchStatus,
 } from "@/lib/use-watch-items";
+import { useAgent } from "@/lib/use-agent";
 import { useHistory } from "@/lib/use-history";
 import { MiniActivity } from "./mini-activity";
 import { AuthFooter } from "./auth-footer";
@@ -45,6 +46,7 @@ const HISTORY_DOT = {
 export function Sidebar() {
   const { items, loading } = useWatchItems();
   const { entries, loading: historyLoading } = useHistory();
+  const { status } = useAgent();
 
   return (
     <aside className="flex h-full w-full flex-col border-r border-panel-border bg-panel/60">
@@ -179,12 +181,20 @@ export function Sidebar() {
         <AuthFooter />
         <div className="flex items-center gap-2 text-xs text-zinc-300">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="absolute inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            <span
+              className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
+                status ? "bg-emerald-400" : "bg-zinc-600"
+              }`}
+            />
+            <span
+              className={`absolute inline-flex h-2 w-2 rounded-full ${
+                status ? "bg-emerald-400" : "bg-zinc-600"
+              }`}
+            />
           </span>
-          Agent online
+          {status ? "Agent online" : "Agent offline"}
           <span className="ml-auto font-mono text-[11px] text-muted">
-            poll 30s
+            {status ? `poll ${status.intervalSec}s` : "poll —"}
           </span>
         </div>
       </div>

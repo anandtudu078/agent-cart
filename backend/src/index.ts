@@ -8,6 +8,8 @@ import { activityRouter } from "./routes/activity.js";
 import { authRouter } from "./routes/auth.js";
 import { watchItemsRouter } from "./routes/watch-items.js";
 import { historyRouter } from "./routes/history.js";
+import { agentRouter } from "./routes/agent.js";
+import { startAgentLoop } from "./agent/cycle.js";
 
 const app = express();
 
@@ -29,6 +31,7 @@ app.use("/api", activityRouter);
 app.use("/api", authRouter);
 app.use("/api", watchItemsRouter);
 app.use("/api", historyRouter);
+app.use("/api", agentRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {
@@ -52,6 +55,7 @@ app.use(
 
 // --- Bootstrap -------------------------------------------------------------
 await connectDB();
+startAgentLoop();
 
 app.listen(env.port, () => {
   console.log(

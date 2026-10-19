@@ -84,5 +84,11 @@ export function useStats() {
 
   useEffect(refresh, [refresh]);
 
+  // shortcut: 15s polling to pick up agent-cycle updates; revisit with push updates
+  useEffect(() => {
+    const timer = window.setInterval(refresh, 15_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
   return { stats, loading, refresh };
 }

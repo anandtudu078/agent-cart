@@ -78,6 +78,13 @@ export function useWatchItems() {
 
   useEffect(refresh, [refresh]);
 
+  // shortcut: 15s polling to pick up agent-cycle updates — switch to SSE or
+  // websockets when stale-for-15s stops being acceptable
+  useEffect(() => {
+    const timer = window.setInterval(refresh, 15_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
   /** POST a new watch item; returns an error message or null on success. */
   const add = useCallback(
     async (input: NewWatchItem): Promise<string | null> => {

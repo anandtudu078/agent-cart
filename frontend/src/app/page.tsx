@@ -1,5 +1,6 @@
 import { Activity, Eye, History as HistoryIcon } from "lucide-react";
 import { ActivityLog } from "@/components/dashboard/activity-log";
+import { AgentStatusBadge } from "@/components/dashboard/agent-status";
 import { HistoryFeed } from "@/components/dashboard/history-feed";
 import { Stats } from "@/components/dashboard/stats";
 import { Watchlist } from "@/components/dashboard/watchlist";
@@ -41,6 +42,7 @@ export default function Home() {
               Watchlist, history, and stats below are live from the API.
             </p>
           </div>
+          <AgentStatusBadge />
         </div>
 
         <Stats />

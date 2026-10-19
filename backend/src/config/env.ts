@@ -29,9 +29,17 @@ function jwtSecret(): string {
   return "agentcart-dev-secret";
 }
 
+// agent scan timer; floor of 5s so a typo can't hammer the DB
+const agentIntervalSec = Number(process.env.AGENT_INTERVAL_SEC ?? 30);
+
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 4000),
+  agent: {
+    intervalSec: Number.isFinite(agentIntervalSec)
+      ? Math.max(5, Math.trunc(agentIntervalSec))
+      : 30,
+  },
   corsOrigins: (process.env.CORS_ORIGINS ?? "http://localhost:3000")
     .split(",")
     .map((origin) => origin.trim())

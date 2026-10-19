@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "./api";
 
 export type HistoryKind = "buy" | "alert" | "scan" | "info";
@@ -23,17 +23,19 @@ interface RawEntry {
   occurredAt: string;
 }
 
+// shortcut: 15s polling to pick up agent-cycle updates — switch to SSE when
+// stale-for-15s stops being acceptable
+const POLL_MS = 15_000;
+
 /** Recent agent decisions from GET /api/history (newest first). */
 export function useHistory() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let alive = true;
+  const refresh = useCallback(() => {
     fetch(`${API_BASE}/api/history?limit=20`)
       .then((res) => (res.ok ? res.json() : { entries: [] }))
       .then((data: { entries?: RawEntry[] }) => {
-        if (!alive) return;
         setEntries(
           (data.entries ?? []).map((entry) => ({
             id: entry._id,
@@ -47,16 +49,15 @@ export function useHistory() {
           })),
         );
       })
-      .catch(() => {
-        if (alive) setEntries([]);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
   }, []);
 
-  return { entries, loading };
+  useEffect(() => {
+    refresh();
+    const timer = window.setInterval(refresh, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  return { entries, loading, refresh };
 }

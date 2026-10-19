@@ -9,6 +9,7 @@ import { authRouter } from "./routes/auth.js";
 import { watchItemsRouter } from "./routes/watch-items.js";
 import { historyRouter } from "./routes/history.js";
 import { agentRouter } from "./routes/agent.js";
+import { cartRouter } from "./routes/cart.js";
 import { startAgentLoop } from "./agent/cycle.js";
 
 const app = express();
@@ -32,6 +33,7 @@ app.use("/api", authRouter);
 app.use("/api", watchItemsRouter);
 app.use("/api", historyRouter);
 app.use("/api", agentRouter);
+app.use("/api", cartRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {

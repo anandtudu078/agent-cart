@@ -59,8 +59,12 @@ export function Stats() {
     },
     {
       label: "Cart value",
-      value: "—",
-      hint: "checkout lands next",
+      value: loading ? "…" : `$${stats.cartTotal.toFixed(0)}`,
+      hint: loading
+        ? "loading…"
+        : stats.cartItems === 0
+          ? "nothing reserved"
+          : `${stats.cartItems} item${stats.cartItems === 1 ? "" : "s"} reserved`,
       icon: "cart",
     },
   ];

@@ -12,6 +12,8 @@ export interface Stats {
   decisions: number; // history entries in the agent log
   alerts: number; // history entries of kind "alert"
   buys: number; // history entries of kind "buy"
+  cartItems: number; // reserved cart entries
+  cartTotal: number; // total $ reserved in the cart
 }
 
 const EMPTY: Stats = {
@@ -22,6 +24,8 @@ const EMPTY: Stats = {
   decisions: 0,
   alerts: 0,
   buys: 0,
+  cartItems: 0,
+  cartTotal: 0,
 };
 
 // shortcut: "nearing target" is a fixed 5% band — revisit if operators want it configurable
@@ -51,10 +55,14 @@ export function useStats() {
       fetch(`${API_BASE}/api/history?limit=${HISTORY_LIMIT}`).then((res) =>
         res.ok ? res.json() : { entries: [] },
       ),
+      fetch(`${API_BASE}/api/cart`).then((res) =>
+        res.ok ? res.json() : { entries: [], total: 0 },
+      ),
     ])
-      .then(([itemsData, entriesData]) => {
+      .then(([itemsData, entriesData, cartData]) => {
         const items = (itemsData as { items?: RawItem[] }).items ?? [];
         const entries = (entriesData as { entries?: RawEntry[] }).entries ?? [];
+        const cart = cartData as { entries?: unknown[]; total?: number };
 
         const next: Stats = { ...EMPTY, decisions: entries.length };
         for (const item of items) {
@@ -76,6 +84,8 @@ export function useStats() {
           if (entry.kind === "alert") next.alerts += 1;
           if (entry.kind === "buy") next.buys += 1;
         }
+        next.cartItems = cart.entries?.length ?? 0;
+        next.cartTotal = cart.total ?? 0;
         setStats(next);
       })
       .catch(() => setStats(EMPTY))

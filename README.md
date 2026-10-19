@@ -23,7 +23,7 @@ Built today:
 | Data layer | ✅ Mongoose schemas (`watch_items`, `history_entries`, `activity_events` with TTL), retrying DB bootstrap, idempotent seed |
 | Database | ✅ MongoDB Atlas M0 (prod-ready), local Docker Mongo for dev |
 | Agent service | ✅ built-in Node scan loop (`AGENT_INTERVAL_SEC`, simulated price checks) · 🔜 Python/LangChain fetcher (not yet scaffolded) |
-| Commerce | 🔜 PayPal checkout route (`@paypal/checkout-server-sdk` installed) |
+| Commerce | ✅ cart hold/release + PayPal checkout/capture routes (`@paypal/checkout-server-sdk`, sandbox by default) |
 | API surface | ✅ watch-item CRUD + history routes |
 
 ## Architecture
@@ -91,6 +91,11 @@ npm run dev             # dashboard on http://localhost:3000
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
+- `GET /api/cart` — reserved cart items + total value
+- `POST /api/cart` — reserve a watch item `{watchItemId}` (409 if already reserved)
+- `DELETE /api/cart/:id` — release a reserved item
+- `POST /api/cart/:id/checkout` — create a PayPal order, returns `{orderId, approvalUrl}` (501 when PayPal creds are unset)
+- `POST /api/cart/:id/capture` — capture an approved PayPal order
 - `GET /api/history` — recent agent decisions, newest first (`?limit=1..100`, `?kind=buy|alert|scan|info`)
 - `POST /api/history` — record a decision `{itemTitle, action, detail, kind}`
 
@@ -99,6 +104,7 @@ npm run dev             # dashboard on http://localhost:3000
 - **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
+- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id
 
 ## License
 

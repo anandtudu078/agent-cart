@@ -28,8 +28,9 @@ export function agentState() {
 async function log(
   level: "info" | "ok" | "warn" | "buy",
   message: string,
+  alert = false,
 ): Promise<void> {
-  await ActivityEvent.create({ level, message, source: "agent-cycle" });
+  await ActivityEvent.create({ level, message, source: "agent-cycle", alert });
 }
 
 function jittered(price: number): number {
@@ -91,6 +92,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         await log(
           "warn",
           `price drop: ${item.title} $${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} at ${item.retailer}`,
+          true, // surfaced as a toast/desktop notification on the dashboard
         );
       }
     }

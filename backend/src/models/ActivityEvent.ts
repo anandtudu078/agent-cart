@@ -16,6 +16,8 @@ export const activityEventSchema = new Schema(
     },
     message: { type: String, required: true, trim: true },
     source: { type: String, trim: true },
+    // true on lines the UI should also surface as a desktop/toast alert
+    alert: { type: Boolean, default: false },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

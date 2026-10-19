@@ -11,6 +11,7 @@ type EventLine = {
   level: (typeof LEVELS)[number];
   message: string;
   source?: string | null;
+  alert?: boolean;
 };
 
 export const activityRouter = Router();

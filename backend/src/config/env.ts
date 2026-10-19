@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
@@ -25,8 +26,9 @@ function jwtSecret(): string {
   if (nodeEnv === "production") {
     throw new Error("JWT_SECRET must be set in production");
   }
-  // dev-only fallback; sessions are invalidated anyway on secret rotation
-  return "agentcart-dev-secret";
+  // dev-only: random per boot so a checked-out repo can't forge session
+  // tokens against a running dev server (logging out on restart is the price)
+  return crypto.randomUUID();
 }
 
 // agent scan timer; floor of 5s so a typo can't hammer the DB

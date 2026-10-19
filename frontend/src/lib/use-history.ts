@@ -33,7 +33,7 @@ export function useHistory() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
-    fetch(`${API_BASE}/api/history?limit=20`)
+    fetch(`${API_BASE}/api/history?limit=20`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : { entries: [] }))
       .then((data: { entries?: RawEntry[] }) => {
         setEntries(

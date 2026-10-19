@@ -1,13 +1,16 @@
 import { Router } from "express";
 import { WatchItem } from "../models/index.js";
+import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 
 export const watchItemsRouter = Router();
 
 const STATUSES = ["watching", "drop", "paused"] as const;
 
 /** GET /api/watch-items — full watchlist, newest first. */
-watchItemsRouter.get("/watch-items", async (_req, res) => {
-  const items = await WatchItem.find().sort({ createdAt: -1 }).lean();
+watchItemsRouter.get("/watch-items", async (req, res) => {
+  const items = await WatchItem.find(ownedByUser(req.userId!))
+    .sort({ createdAt: -1 })
+    .lean();
   res.json({ items });
 });
 
@@ -40,6 +43,7 @@ watchItemsRouter.post("/watch-items", async (req, res) => {
     emoji: body.emoji,
     url: body.url,
     pollIntervalSec: body.pollIntervalSec,
+    owner: req.userId,
   });
   res.status(201).json({ item });
 });
@@ -58,32 +62,36 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
     return;
   }
 
-  const item = await WatchItem.findByIdAndUpdate(
-    req.params.id,
-    {
-      ...(typeof body.price === "number" ? { price: body.price } : {}),
-      ...(typeof body.targetPrice === "number"
-        ? { targetPrice: body.targetPrice }
-        : {}),
-      ...(typeof body.deltaPct === "number" ? { deltaPct: body.deltaPct } : {}),
-      ...(body.status ? { status: body.status } : {}),
-      lastCheckedAt: new Date(),
-    },
-    { new: true },
-  );
+  const item = await WatchItem.findById(req.params.id);
   if (!item) {
     res.status(404).json({ error: "watch item not found" });
     return;
   }
+  if (!isOwnedBy(item, req.userId!)) {
+    res.status(403).json({ error: "not your item" });
+    return;
+  }
+
+  if (typeof body.price === "number") item.price = body.price;
+  if (typeof body.targetPrice === "number") item.targetPrice = body.targetPrice;
+  if (typeof body.deltaPct === "number") item.deltaPct = body.deltaPct;
+  if (body.status) item.status = body.status as (typeof STATUSES)[number];
+  item.lastCheckedAt = new Date();
+  await item.save();
   res.json({ item });
 });
 
 /** DELETE /api/watch-items/:id — stop watching. */
 watchItemsRouter.delete("/watch-items/:id", async (req, res) => {
-  const item = await WatchItem.findByIdAndDelete(req.params.id);
+  const item = await WatchItem.findById(req.params.id);
   if (!item) {
     res.status(404).json({ error: "watch item not found" });
     return;
   }
+  if (!isOwnedBy(item, req.userId!)) {
+    res.status(403).json({ error: "not your item" });
+    return;
+  }
+  await item.deleteOne();
   res.json({ ok: true });
 });

@@ -49,13 +49,13 @@ export function useStats() {
 
   const refresh = useCallback(() => {
     Promise.all([
-      fetch(`${API_BASE}/api/watch-items`).then((res) =>
-        res.ok ? res.json() : { items: [] },
+      fetch(`${API_BASE}/api/watch-items`, { credentials: "include" }).then(
+        (res) => (res.ok ? res.json() : { items: [] }),
       ),
-      fetch(`${API_BASE}/api/history?limit=${HISTORY_LIMIT}`).then((res) =>
-        res.ok ? res.json() : { entries: [] },
-      ),
-      fetch(`${API_BASE}/api/cart`).then((res) =>
+      fetch(`${API_BASE}/api/history?limit=${HISTORY_LIMIT}`, {
+        credentials: "include",
+      }).then((res) => (res.ok ? res.json() : { entries: [] })),
+      fetch(`${API_BASE}/api/cart`, { credentials: "include" }).then((res) =>
         res.ok ? res.json() : { entries: [], total: 0 },
       ),
     ])

@@ -25,6 +25,8 @@ export const cartEntrySchema = new Schema(
       index: true,
     },
     paypalOrderId: { type: String },
+    // optional so seeded demo rows stay shared; null = visible to any signed-in user
+    owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },
   {
     timestamps: true,

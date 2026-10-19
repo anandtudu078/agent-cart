@@ -3,8 +3,12 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { User } from "../models/index.js";
+import { authLimiter, currentUserId } from "../middleware/auth.js";
 
 export const authRouter = Router();
+
+// brute-force protection on every auth route (mounted at /api/auth)
+authRouter.use(authLimiter);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE = "agentcart_session";
@@ -21,25 +25,15 @@ function startSession(res: Response, userId: string) {
   });
 }
 
-function currentUserId(req: Request): string | null {
-  const token = req.cookies?.[COOKIE];
-  if (typeof token !== "string") return null;
-  try {
-    const payload = jwt.verify(token, env.jwt.secret);
-    if (typeof payload === "string") return payload;
-    return typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
-
 /** POST /api/auth/signup — create an account and log in. */
-authRouter.post("/auth/signup", async (req, res) => {
-  const body = (req.body ?? {}) as { email?: string; password?: string };
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password;
+authRouter.post("/signup", async (req, res) => {
+  const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
+  // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
+  const email =
+    typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
+  const password = typeof body.password === "string" ? body.password : null;
 
-  if (!email || !EMAIL_RE.test(email) || typeof password !== "string" || password.length < 8) {
+  if (!email || !EMAIL_RE.test(email) || password === null || password.length < 8) {
     res.status(400).json({
       error: "valid email and a password of at least 8 characters are required",
     });
@@ -63,11 +57,13 @@ authRouter.post("/auth/signup", async (req, res) => {
 });
 
 /** POST /api/auth/login */
-authRouter.post("/auth/login", async (req, res) => {
-  const body = (req.body ?? {}) as { email?: string; password?: string };
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password;
-  if (!email || typeof password !== "string" || !password) {
+authRouter.post("/login", async (req, res) => {
+  const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
+  // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
+  const email =
+    typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
+  const password = typeof body.password === "string" ? body.password : null;
+  if (!email || !password) {
     res.status(400).json({ error: "email and password are required" });
     return;
   }
@@ -85,13 +81,13 @@ authRouter.post("/auth/login", async (req, res) => {
 });
 
 /** POST /api/auth/logout */
-authRouter.post("/auth/logout", (req, res) => {
+authRouter.post("/logout", (req, res) => {
   res.clearCookie(COOKIE, { path: "/" });
   res.json({ ok: true });
 });
 
 /** GET /api/auth/me — session probe for the UI (401 when logged out). */
-authRouter.get("/auth/me", async (req, res) => {
+authRouter.get("/me", async (req, res) => {
   const userId = currentUserId(req);
   const user = userId ? await User.findById(userId).lean() : null;
   if (!user) {

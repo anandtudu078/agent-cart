@@ -8,6 +8,7 @@ import {
   HistoryEntry,
   WatchItem,
 } from "../models/index.js";
+import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 
 // default import (not named): Node's CJS/ESM interop can't see the nested
 // `orders` export of this untyped package
@@ -40,8 +41,11 @@ async function log(
 }
 
 /** GET /api/cart — reserved items + total value. */
-cartRouter.get("/cart", async (_req, res) => {
-  const entries = await CartEntry.find({ status: "reserved" })
+cartRouter.get("/cart", async (req, res) => {
+  const entries = await CartEntry.find({
+    status: "reserved",
+    ...ownedByUser(req.userId!),
+  })
     .sort({ createdAt: -1 })
     .lean();
   const total = entries.reduce((sum, entry) => sum + entry.price, 0);
@@ -61,6 +65,10 @@ cartRouter.post("/cart", async (req, res) => {
     res.status(404).json({ error: "watch item not found" });
     return;
   }
+  if (!isOwnedBy(item, req.userId!)) {
+    res.status(403).json({ error: "not your item" });
+    return;
+  }
   const existing = await CartEntry.findOne({
     watchItem: item._id,
     status: "reserved",
@@ -77,6 +85,7 @@ cartRouter.post("/cart", async (req, res) => {
     emoji: item.emoji,
     price: item.price,
     currency: item.currency,
+    owner: req.userId,
   });
   await HistoryEntry.create({
     item: item._id,
@@ -94,11 +103,16 @@ cartRouter.post("/cart", async (req, res) => {
 
 /** DELETE /api/cart/:id — release a reserved item. */
 cartRouter.delete("/cart/:id", async (req, res) => {
-  const entry = await CartEntry.findByIdAndDelete(req.params.id);
+  const entry = await CartEntry.findById(req.params.id);
   if (!entry) {
     res.status(404).json({ error: "cart entry not found" });
     return;
   }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  await entry.deleteOne();
   await log("info", `cart released: ${entry.itemTitle}`);
   res.json({ ok: true });
 });
@@ -108,6 +122,10 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
   const entry = await CartEntry.findById(req.params.id);
   if (!entry) {
     res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
     return;
   }
   if (entry.status !== "reserved") {
@@ -178,6 +196,10 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
   const entry = await CartEntry.findById(req.params.id);
   if (!entry) {
     res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
     return;
   }
   if (!entry.paypalOrderId) {

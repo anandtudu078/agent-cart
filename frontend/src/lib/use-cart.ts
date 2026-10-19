@@ -46,7 +46,7 @@ export function useCart() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
-    fetch(`${API_BASE}/api/cart`)
+    fetch(`${API_BASE}/api/cart`, { credentials: "include" })
       .then((res) => (res.ok ? res.json() : { entries: [], total: 0 }))
       .then((data: { entries?: RawEntry[]; total?: number }) => {
         setEntries((data.entries ?? []).map(mapEntry));
@@ -72,6 +72,7 @@ export function useCart() {
         const res = await fetch(`${API_BASE}/api/cart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ watchItemId }),
         });
         if (!res.ok) {
@@ -95,6 +96,7 @@ export function useCart() {
       try {
         const res = await fetch(`${API_BASE}/api/cart/${id}`, {
           method: "DELETE",
+          credentials: "include",
         });
         if (res.ok) {
           refresh();
@@ -116,6 +118,7 @@ export function useCart() {
       try {
         const res = await fetch(`${API_BASE}/api/cart/${id}/checkout`, {
           method: "POST",
+          credentials: "include",
         });
         const data = (await res.json().catch(() => null)) as {
           approvalUrl?: string;
@@ -139,6 +142,7 @@ export function useCart() {
       try {
         const res = await fetch(`${API_BASE}/api/cart/${id}/capture`, {
           method: "POST",
+          credentials: "include",
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => null)) as {

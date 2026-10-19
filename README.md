@@ -82,6 +82,10 @@ npm run dev             # dashboard on http://localhost:3000
 
 ## API
 
+All routes below (except `/api/health` and `/api/auth/*`) require a session
+cookie from `POST /api/auth/login` or `/api/auth/signup`; everything else
+returns 401.
+
 - `GET /api/health` — liveness + database state
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
@@ -105,6 +109,20 @@ npm run dev             # dashboard on http://localhost:3000
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
 - **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id
+
+## Security
+
+- Session cookie (`httpOnly`, `SameSite=Lax`, `Secure` in production) guards
+  every data route; watch items and cart entries are additionally scoped per
+  owner (ownerless seeded demo rows are shared between signed-in users).
+- Login/signup are rate-limited (10 / 15 min / IP); write endpoints are
+  capped at 60 req/min / IP.
+- `helmet` security headers on the API, `X-Powered-By` disabled on API and
+  dashboard; Mongo credentials are redacted from logs.
+- In development the JWT secret is random per boot (logging out on restart);
+  production requires `JWT_SECRET`.
+- **Operational note:** if the Atlas password was ever printed to a dev log
+  (fixed in this release), rotate it in the Atlas console.
 
 ## License
 

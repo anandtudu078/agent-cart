@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
-import { User } from "../models/index.js";
+import { CartEntry, User, WatchItem } from "../models/index.js";
 import { authLimiter, currentUserId } from "../middleware/auth.js";
 
 export const authRouter = Router();
@@ -84,6 +84,77 @@ authRouter.post("/login", async (req, res) => {
 authRouter.post("/logout", (req, res) => {
   res.clearCookie(COOKIE, { path: "/" });
   res.json({ ok: true });
+});
+
+const CURRENCIES = ["USD", "EUR", "GBP", "INR", "JPY"] as const;
+
+/** GET /api/auth/settings — the signed-in user's preferences. */
+authRouter.get("/settings", async (req, res) => {
+  const userId = currentUserId(req);
+  const user = userId ? await User.findById(userId).lean() : null;
+  if (!user) {
+    res.status(401).json({ error: "not authenticated" });
+    return;
+  }
+  res.json({ settings: user.settings ?? {} });
+});
+
+/** PATCH /api/auth/settings — update currency / notification prefs. */
+authRouter.patch("/settings", async (req, res) => {
+  const userId = currentUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "not authenticated" });
+    return;
+  }
+  const body = (req.body ?? {}) as { currency?: unknown; priceAlerts?: unknown };
+
+  const patch: { currency?: string; priceAlerts?: boolean } = {};
+  if (body.currency !== undefined) {
+    if (
+      typeof body.currency !== "string" ||
+      !CURRENCIES.includes(body.currency.toUpperCase() as (typeof CURRENCIES)[number])
+    ) {
+      res.status(400).json({ error: `currency must be one of ${CURRENCIES.join(", ")}` });
+      return;
+    }
+    patch.currency = body.currency.toUpperCase();
+  }
+  if (body.priceAlerts !== undefined) {
+    if (typeof body.priceAlerts !== "boolean") {
+      res.status(400).json({ error: "priceAlerts must be a boolean" });
+      return;
+    }
+    patch.priceAlerts = body.priceAlerts;
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: patch },
+    { new: true },
+  ).lean();
+  if (!user) {
+    res.status(401).json({ error: "not authenticated" });
+    return;
+  }
+  res.json({ settings: user.settings ?? {} });
+});
+
+/** DELETE /api/auth/account — delete the user and everything they own. */
+authRouter.delete("/account", async (req, res) => {
+  const userId = currentUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "not authenticated" });
+    return;
+  }
+  const ownedItems = await WatchItem.find({ owner: userId }).select("_id");
+  const itemIds = ownedItems.map((item) => item._id);
+  await Promise.all([
+    WatchItem.deleteMany({ owner: userId }),
+    CartEntry.deleteMany({ owner: userId }),
+    User.deleteOne({ _id: userId }),
+  ]);
+  res.clearCookie(COOKIE, { path: "/" });
+  res.json({ ok: true, deletedItems: itemIds.length });
 });
 
 /** GET /api/auth/me — session probe for the UI (401 when logged out). */

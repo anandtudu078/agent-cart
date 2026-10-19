@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { BellRing } from "lucide-react";
 import { useDropAlerts } from "@/lib/use-drop-alerts";
+import { useSettings } from "@/lib/use-settings";
 
 const TOAST_MS = 8_000;
 
@@ -13,11 +14,17 @@ const TOAST_MS = 8_000;
  */
 export function DropToasts() {
   const { toasts, dismiss } = useDropAlerts();
+  const { settings } = useSettings();
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 flex-col gap-2">
       {toasts.map((toast) => (
-        <Toast key={toast.id} toast={toast} onDismiss={dismiss} />
+        <Toast
+          key={toast.id}
+          toast={toast}
+          desktopAlerts={settings.priceAlerts}
+          onDismiss={dismiss}
+        />
       ))}
     </div>
   );
@@ -25,9 +32,11 @@ export function DropToasts() {
 
 function Toast({
   toast,
+  desktopAlerts,
   onDismiss,
 }: {
   toast: { id: number; message: string; at: string };
+  desktopAlerts: boolean;
   onDismiss: (id: number) => void;
 }) {
   useEffect(() => {
@@ -36,14 +45,16 @@ function Toast({
   }, [toast.id, onDismiss]);
 
   useEffect(() => {
-    // desktop notification only when already permitted (settings page asks)
+    // desktop notification only when enabled in settings AND permitted
+    // (the settings page is where permission gets requested)
     if (
+      desktopAlerts &&
       typeof Notification !== "undefined" &&
       Notification.permission === "granted"
     ) {
       new Notification("AgentCart — price drop 🎉", { body: toast.message });
     }
-  }, [toast.id, toast.message]);
+  }, [toast.id, toast.message, desktopAlerts]);
 
   return (
     <div

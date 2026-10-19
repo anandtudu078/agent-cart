@@ -6,10 +6,12 @@ import { useCart } from "@/lib/use-cart";
 import { useWatchItems } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { PriceChart } from "./price-chart";
+import { formatPrice, useSettings } from "@/lib/use-settings";
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
   const { items, loading, add, remove, setItem } = useWatchItems();
+  const { settings } = useSettings();
   const cart = useCart();
   const [cartNotice, setCartNotice] = useState<string | null>(null);
   // id of the item whose price chart row is open (null = all collapsed)
@@ -68,10 +70,10 @@ export function Watchlist() {
               </td>
               <td className="px-4 py-3 text-muted">{item.retailer}</td>
               <td className="px-4 py-3 text-right font-mono">
-                ${item.price.toFixed(2)}
+                {formatPrice(item.price, settings.currency)}
               </td>
               <td className="px-4 py-3 text-right font-mono text-muted">
-                ${item.target.toFixed(2)}
+                {formatPrice(item.target, settings.currency)}
               </td>
               <td
                 className={`px-4 py-3 text-right font-mono ${

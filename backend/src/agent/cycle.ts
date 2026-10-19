@@ -9,6 +9,8 @@ export interface CycleSummary {
 }
 
 let running = false;
+let intervalSec = env.agent.intervalSec;
+let loopTimer: ReturnType<typeof setInterval> | null = null;
 let lastCycleAt: Date | null = null;
 let lastSummary: CycleSummary | null = null;
 
@@ -20,9 +22,27 @@ const JITTER = 0.03;
 export function agentState() {
   return {
     running,
+    intervalSec,
     lastCycleAt: lastCycleAt?.toISOString() ?? null,
     lastSummary,
   };
+}
+
+/** Current scan interval in seconds (mutable via PATCH /api/agent/settings). */
+export function agentIntervalSec(): number {
+  return intervalSec;
+}
+
+/**
+ * Change the scan interval at runtime and restart the timer. Clamped by the
+ * caller; the loop only restarts when it was already started.
+ */
+export function setAgentIntervalSec(sec: number): void {
+  intervalSec = sec;
+  if (loopTimer) {
+    clearInterval(loopTimer);
+    loopTimer = setInterval(tick, sec * 1000).unref();
+  }
 }
 
 async function log(
@@ -130,7 +150,6 @@ function tick(): void {
 
 /** Start the interval loop; call once after the DB is connected. */
 export function startAgentLoop(): void {
-  const ms = env.agent.intervalSec * 1000;
-  console.log(`✓ Agent scan loop running every ${env.agent.intervalSec}s`);
-  setInterval(tick, ms).unref();
+  console.log(`✓ Agent scan loop running every ${intervalSec}s`);
+  loopTimer = setInterval(tick, intervalSec * 1000).unref();
 }

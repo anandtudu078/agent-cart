@@ -1,0 +1,10 @@
+# Virtualenv + bytecode
+.venv/
+__pycache__/
+*.pyc
+
+# Env
+.env
+
+# Logs / tooling
+.pytest_cache/

@@ -108,7 +108,7 @@ returns 401.
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
 - `GET /api/watch-items` — full watchlist, newest first
 - `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}`
-- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, or `status`
+- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, or `autoBuy`
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
@@ -130,7 +130,7 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 ## Data model
 
-- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`
+- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target)
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
 - **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`

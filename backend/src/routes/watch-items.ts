@@ -48,17 +48,22 @@ watchItemsRouter.post("/watch-items", async (req, res) => {
   res.status(201).json({ item });
 });
 
-/** PATCH /api/watch-items/:id — update price, target, or status. */
+/** PATCH /api/watch-items/:id — update price, target, status, or autoBuy. */
 watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
   const body = (req.body ?? {}) as {
     price?: number;
     targetPrice?: number;
     status?: string;
     deltaPct?: number;
+    autoBuy?: boolean;
   };
 
   if (body.status && !STATUSES.includes(body.status as (typeof STATUSES)[number])) {
     res.status(400).json({ error: `status must be one of ${STATUSES.join(", ")}` });
+    return;
+  }
+  if (body.autoBuy !== undefined && typeof body.autoBuy !== "boolean") {
+    res.status(400).json({ error: "autoBuy must be a boolean" });
     return;
   }
 
@@ -76,6 +81,7 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
   if (typeof body.targetPrice === "number") item.targetPrice = body.targetPrice;
   if (typeof body.deltaPct === "number") item.deltaPct = body.deltaPct;
   if (body.status) item.status = body.status as (typeof STATUSES)[number];
+  if (body.autoBuy !== undefined) item.autoBuy = body.autoBuy;
   item.lastCheckedAt = new Date();
   await item.save();
   res.json({ item });

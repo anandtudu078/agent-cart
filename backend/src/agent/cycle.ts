@@ -1,4 +1,9 @@
-import { WatchItem, HistoryEntry, ActivityEvent } from "../models/index.js";
+import {
+  WatchItem,
+  HistoryEntry,
+  ActivityEvent,
+  CartEntry,
+} from "../models/index.js";
 import { env } from "../config/env.js";
 import { fetchPriceUpdates } from "./service.js";
 
@@ -129,6 +134,41 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           `price drop: ${item.title} $${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} at ${item.retailer}`,
           true, // surfaced as a toast/desktop notification on the dashboard
         );
+        if (item.autoBuy) {
+          const held = await CartEntry.findOne({
+            watchItem: item._id,
+            status: "reserved",
+          });
+          if (held) {
+            await log(
+              "info",
+              `auto-buy skipped: ${item.title} is already in the cart`,
+            );
+          } else {
+            await CartEntry.create({
+              watchItem: item._id,
+              itemTitle: item.title,
+              retailer: item.retailer,
+              emoji: item.emoji,
+              price: item.price,
+              currency: item.currency,
+              owner: item.owner,
+            });
+            await HistoryEntry.create({
+              item: item._id,
+              itemTitle: item.title,
+              action: "Auto-bought",
+              detail: `Pulled into the cart at $${nextPrice.toFixed(2)} (target $${item.targetPrice.toFixed(2)}) — approve checkout to buy`,
+              kind: "buy",
+              price: nextPrice,
+            });
+            await log(
+              "buy",
+              `auto-buy: ${item.title} $${nextPrice.toFixed(2)} at ${item.retailer} — held in cart`,
+              true,
+            );
+          }
+        }
       }
     }
 

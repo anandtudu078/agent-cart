@@ -2,13 +2,20 @@ import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
-import { CartEntry, User, WatchItem } from "../models/index.js";
+import {
+  ActivityEvent,
+  CartEntry,
+  HistoryEntry,
+  User,
+  WatchItem,
+} from "../models/index.js";
 import { authLimiter, currentUserId } from "../middleware/auth.js";
 
 export const authRouter = Router();
 
-// brute-force protection on every auth route (mounted at /api/auth)
-authRouter.use(authLimiter);
+// brute-force protection on the credential-checking routes only — throttling
+// GET /me, /settings or logout here would lock a signed-in user out of their
+// own account after 10 requests/15 min
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE = "agentcart_session";
@@ -26,7 +33,7 @@ function startSession(res: Response, userId: string) {
 }
 
 /** POST /api/auth/signup — create an account and log in. */
-authRouter.post("/signup", async (req, res) => {
+authRouter.post("/signup", authLimiter, async (req, res) => {
   const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
   // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
   const email =
@@ -57,7 +64,7 @@ authRouter.post("/signup", async (req, res) => {
 });
 
 /** POST /api/auth/login */
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", authLimiter, async (req, res) => {
   const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
   // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
   const email =
@@ -158,6 +165,12 @@ authRouter.delete("/account", async (req, res) => {
   await Promise.all([
     WatchItem.deleteMany({ owner: userId }),
     CartEntry.deleteMany({ owner: userId }),
+    // decisions about their items + rows they posted themselves — otherwise
+    // the deleted account's activity stays readable in the shared feeds
+    HistoryEntry.deleteMany({
+      $or: [{ owner: userId }, { item: { $in: itemIds } }],
+    }),
+    ActivityEvent.deleteMany({ owner: userId }),
     User.deleteOne({ _id: userId }),
   ]);
   res.clearCookie(COOKIE, { path: "/" });

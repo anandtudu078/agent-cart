@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Types } from "mongoose";
 import paypal from "@paypal/checkout-server-sdk";
 import type { core as paypalCore } from "@paypal/checkout-server-sdk";
 import { env } from "../config/env.js";
@@ -37,8 +38,17 @@ function paypalClient(): paypalCore.PayPalHttpClient | null {
 async function log(
   level: "info" | "ok" | "warn" | "buy",
   message: string,
+  alert = false,
+  /** null/undefined = visible to every signed-in user. */
+  owner?: Types.ObjectId | string | null,
 ): Promise<void> {
-  await ActivityEvent.create({ level, message, source: "cart" });
+  await ActivityEvent.create({
+    level,
+    message,
+    source: "cart",
+    alert,
+    owner,
+  });
 }
 
 function round2(value: number): number {
@@ -120,10 +130,13 @@ cartRouter.post("/cart/:id/coupon", async (req, res) => {
     action: "Coupon applied",
     detail: `${coupon.code} saved $${discount.toFixed(2)} at ${entry.retailer} ($${entry.price.toFixed(2)} → $${(entry.price - discount).toFixed(2)})`,
     kind: "buy",
+    owner: entry.owner,
   });
   await log(
     "ok",
     `coupon applied: ${coupon.code} on ${entry.itemTitle} — $${discount.toFixed(2)} off at ${entry.retailer}`,
+    false,
+    entry.owner,
   );
   res.json({ entry, discount });
 });
@@ -147,6 +160,8 @@ cartRouter.delete("/cart/:id/coupon", async (req, res) => {
   await log(
     "info",
     `coupon removed: ${entry.couponCode} on ${entry.itemTitle}`,
+    false,
+    entry.owner,
   );
   entry.couponCode = undefined;
   entry.couponDiscount = 0;
@@ -195,10 +210,13 @@ cartRouter.post("/cart", async (req, res) => {
     action: "Cart held",
     detail: `Reserved at $${item.price.toFixed(2)} from ${item.retailer} before checkout`,
     kind: "buy",
+    owner: entry.owner,
   });
   await log(
     "buy",
     `cart held: ${item.title} — $${item.price.toFixed(2)} at ${item.retailer}`,
+    false,
+    entry.owner,
   );
   res.status(201).json({ entry });
 });
@@ -215,7 +233,7 @@ cartRouter.delete("/cart/:id", async (req, res) => {
     return;
   }
   await entry.deleteOne();
-  await log("info", `cart released: ${entry.itemTitle}`);
+  await log("info", `cart released: ${entry.itemTitle}`, false, entry.owner);
   res.json({ ok: true });
 });
 
@@ -269,14 +287,16 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
     await HistoryEntry.create({
       item: entry.watchItem,
       itemTitle: entry.itemTitle,
-    action: "Checkout started",
-    detail: `PayPal order ${response.result.id} — $${entryTotal(entry).toFixed(2)} after coupon, awaiting buyer approval`,
-      kind: "buy",
-    });
-    await log(
-      "buy",
-      `checkout started: ${entry.itemTitle} — PayPal order ${response.result.id}`,
-    );
+    action: "Checkout started",    detail: `PayPal order ${response.result.id} — $${entryTotal(entry).toFixed(2)} after coupon, awaiting buyer approval`,
+    kind: "buy",
+    owner: entry.owner,
+  });
+  await log(
+    "buy",
+    `checkout started: ${entry.itemTitle} — PayPal order ${response.result.id}`,
+    false,
+    entry.owner,
+  );
     res.json({
       orderId: response.result.id,
       status: response.result.status,
@@ -286,6 +306,8 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
     await log(
       "warn",
       `checkout failed: ${err instanceof Error ? err.message : String(err)}`,
+      false,
+      entry.owner,
     );
     res.status(502).json({
       error: `PayPal order creation failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -327,19 +349,23 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
     await HistoryEntry.create({
       item: entry.watchItem,
       itemTitle: entry.itemTitle,
-    action: "Order captured",
-    detail: `PayPal capture ${response.result.status} — $${entryTotal(entry).toFixed(2)} at ${entry.retailer}${entry.couponCode ? ` with ${entry.couponCode}` : ""}`,
-      kind: "buy",
-    });
-    await log(
-      "ok",
-      `order captured: ${entry.itemTitle} — $${entryTotal(entry).toFixed(2)} (${response.result.status})`,
-    );
+    action: "Order captured",    detail: `PayPal capture ${response.result.status} — $${entryTotal(entry).toFixed(2)} at ${entry.retailer}${entry.couponCode ? ` with ${entry.couponCode}` : ""}`,
+    kind: "buy",
+    owner: entry.owner,
+  });
+  await log(
+    "ok",
+    `order captured: ${entry.itemTitle} — $${entryTotal(entry).toFixed(2)} (${response.result.status})`,
+    false,
+    entry.owner,
+  );
     res.json({ orderId: response.result.id, status: response.result.status });
   } catch (err) {
     await log(
       "warn",
       `capture failed: ${err instanceof Error ? err.message : String(err)}`,
+      false,
+      entry.owner,
     );
     res.status(502).json({
       error: `PayPal capture failed: ${err instanceof Error ? err.message : String(err)}`,

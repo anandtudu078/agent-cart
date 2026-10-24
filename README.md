@@ -138,10 +138,15 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 ## Security
 
 - Session cookie (`httpOnly`, `SameSite=Lax`, `Secure` in production) guards
-  every data route; watch items and cart entries are additionally scoped per
-  owner (ownerless seeded demo rows are shared between signed-in users).
-- Login/signup are rate-limited (10 / 15 min / IP); write endpoints are
-  capped at 60 req/min / IP.
+  every data route; watch items, cart entries, **history decisions and
+  activity lines** are scoped per owner — a signed-in user only sees their own
+  rows plus ownerless system/seeded demo rows (previously the two feeds were
+  global and leaked every account's activity to every other account).
+- Login/signup are rate-limited (10 / 15 min / IP, and only those two routes
+  — throttling `GET /api/auth/me` would lock users out of their own account);
+  write endpoints are capped at 60 req/min / IP.
+- The SSE activity tail caps concurrent connections at 100 (503 beyond) so
+  one client can't hold unbounded server resources.
 - `helmet` security headers on the API, `X-Powered-By` disabled on API and
   dashboard; Mongo credentials are redacted from logs.
 - In development the JWT secret is random per boot (logging out on restart);

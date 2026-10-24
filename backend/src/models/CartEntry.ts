@@ -25,6 +25,10 @@ export const cartEntrySchema = new Schema(
       index: true,
     },
     paypalOrderId: { type: String },
+    // coupon applied at checkout — discount frozen at apply time (prices are
+    // frozen when the item is reserved)
+    couponCode: { type: String, trim: true, uppercase: true },
+    couponDiscount: { type: Number, default: 0, min: 0 },
     // optional so seeded demo rows stay shared; null = visible to any signed-in user
     owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },

@@ -10,6 +10,8 @@ export interface CartEntry {
   retailer: string;
   emoji: string;
   price: number;
+  couponCode?: string | null;
+  couponDiscount?: number;
   paypalOrderId?: string | null;
 }
 
@@ -20,6 +22,8 @@ interface RawEntry {
   retailer: string;
   emoji?: string;
   price: number;
+  couponCode?: string;
+  couponDiscount?: number;
   status: "reserved" | "checked_out";
   paypalOrderId?: string;
 }
@@ -32,6 +36,8 @@ function mapEntry(raw: RawEntry): CartEntry {
     retailer: raw.retailer,
     emoji: raw.emoji ?? "🛍️",
     price: raw.price,
+    couponCode: raw.couponCode,
+    couponDiscount: raw.couponDiscount ?? 0,
     paypalOrderId: raw.paypalOrderId,
   };
 }
@@ -39,21 +45,32 @@ function mapEntry(raw: RawEntry): CartEntry {
 // shortcut: 15s polling like the other hooks — revisit with push updates
 const POLL_MS = 15_000;
 
-/** Reserved cart items + reserve/release/checkout mutations. */
+/** Reserved cart items + reserve/release/coupon/checkout mutations. */
 export function useCart() {
   const [entries, setEntries] = useState<CartEntry[]>([]);
+  const [subtotal, setSubtotal] = useState(0);
+  const [discount, setDiscount] = useState(0);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(() => {
     fetch(`${API_BASE}/api/cart`, { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : { entries: [], total: 0 }))
-      .then((data: { entries?: RawEntry[]; total?: number }) => {
-        setEntries((data.entries ?? []).map(mapEntry));
-        setTotal(data.total ?? 0);
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: {
+        entries?: RawEntry[];
+        subtotal?: number;
+        discount?: number;
+        total?: number;
+      } | null) => {
+        setEntries((data?.entries ?? []).map(mapEntry));
+        setSubtotal(data?.subtotal ?? 0);
+        setDiscount(data?.discount ?? 0);
+        setTotal(data?.total ?? 0);
       })
       .catch(() => {
         setEntries([]);
+        setSubtotal(0);
+        setDiscount(0);
         setTotal(0);
       })
       .finally(() => setLoading(false));
@@ -95,6 +112,51 @@ export function useCart() {
     async (id: string): Promise<boolean> => {
       try {
         const res = await fetch(`${API_BASE}/api/cart/${id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (res.ok) {
+          refresh();
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    },
+    [refresh],
+  );
+
+  /** Apply a coupon code to a reserved entry; error message or null. */
+  const applyCoupon = useCallback(
+    async (id: string, code: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cart/${id}/coupon`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ code }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "Could not apply the coupon";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
+  /** Remove the coupon from a reserved entry. */
+  const removeCoupon = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cart/${id}/coupon`, {
           method: "DELETE",
           credentials: "include",
         });
@@ -159,5 +221,18 @@ export function useCart() {
     [refresh],
   );
 
-  return { entries, total, loading, refresh, add, remove, checkout, capture };
+  return {
+    entries,
+    subtotal,
+    discount,
+    total,
+    loading,
+    refresh,
+    add,
+    remove,
+    applyCoupon,
+    removeCoupon,
+    checkout,
+    capture,
+  };
 }

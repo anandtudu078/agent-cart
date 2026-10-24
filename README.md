@@ -112,7 +112,10 @@ returns 401.
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
-- `GET /api/cart` — reserved cart items + total value
+- `GET /api/cart` — reserved cart items + `subtotal`, `discount`, `total`
+- `GET /api/coupons` — coupon codes the agent knows (`?retailer=` narrows to one retailer)
+- `POST /api/cart/:id/coupon` — apply `{code}` to a reserved entry (404 when invalid for that retailer)
+- `DELETE /api/cart/:id/coupon` — remove the applied code
 - `POST /api/cart` — reserve a watch item `{watchItemId}` (409 if already reserved)
 - `DELETE /api/cart/:id` — release a reserved item
 - `POST /api/cart/:id/checkout` — create a PayPal order, returns `{orderId, approvalUrl}` (501 when PayPal creds are unset)
@@ -130,7 +133,7 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 - **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
-- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id
+- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`
 
 ## Security
 

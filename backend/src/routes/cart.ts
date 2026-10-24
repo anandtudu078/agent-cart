@@ -9,6 +9,7 @@ import {
   WatchItem,
 } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
+import { couponDiscount, findCoupon, listCoupons } from "../coupons.js";
 
 // default import (not named): Node's CJS/ESM interop can't see the nested
 // `orders` export of this untyped package
@@ -40,7 +41,26 @@ async function log(
   await ActivityEvent.create({ level, message, source: "cart" });
 }
 
-/** GET /api/cart — reserved items + total value. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** What the buyer actually pays for a reserved entry (price − coupon). */
+function entryTotal(entry: { price: number; couponDiscount?: number | null }): number {
+  return round2(entry.price - (entry.couponDiscount ?? 0));
+}
+
+/** GET /api/coupons — codes the agent knows, optionally for one retailer. */
+cartRouter.get("/coupons", (req, res) => {
+  const retailer = req.query.retailer;
+  if (retailer !== undefined && typeof retailer !== "string") {
+    res.status(400).json({ error: "retailer must be a single string value" });
+    return;
+  }
+  res.json({ coupons: listCoupons(retailer) });
+});
+
+/** GET /api/cart — reserved items + subtotal, discount, total. */
 cartRouter.get("/cart", async (req, res) => {
   const entries = await CartEntry.find({
     status: "reserved",
@@ -48,8 +68,90 @@ cartRouter.get("/cart", async (req, res) => {
   })
     .sort({ createdAt: -1 })
     .lean();
-  const total = entries.reduce((sum, entry) => sum + entry.price, 0);
-  res.json({ entries, total });
+  const subtotal = entries.reduce((sum, entry) => sum + entry.price, 0);
+  const discount = entries.reduce(
+    (sum, entry) => sum + (entry.couponDiscount ?? 0),
+    0,
+  );
+  res.json({
+    entries,
+    subtotal: round2(subtotal),
+    discount: round2(discount),
+    total: round2(subtotal - discount),
+  });
+});
+
+/** POST /api/cart/:id/coupon — apply `{code}` to a reserved entry. */
+cartRouter.post("/cart/:id/coupon", async (req, res) => {
+  const body = (req.body ?? {}) as { code?: string };
+  if (typeof body.code !== "string" || !body.code.trim()) {
+    res.status(400).json({ error: "code is required" });
+    return;
+  }
+  const entry = await CartEntry.findById(req.params.id);
+  if (!entry) {
+    res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  if (entry.status !== "reserved") {
+    res.status(409).json({ error: "entry is no longer reserved" });
+    return;
+  }
+
+  const coupon = findCoupon(body.code, entry.retailer);
+  if (!coupon) {
+    res.status(404).json({
+      error: `“${body.code.trim()}” is not a valid code for ${entry.retailer}`,
+    });
+    return;
+  }
+
+  const discount = couponDiscount(coupon, entry.price);
+  entry.couponCode = coupon.code;
+  entry.couponDiscount = discount;
+  await entry.save();
+  await HistoryEntry.create({
+    item: entry.watchItem,
+    itemTitle: entry.itemTitle,
+    action: "Coupon applied",
+    detail: `${coupon.code} saved $${discount.toFixed(2)} at ${entry.retailer} ($${entry.price.toFixed(2)} → $${(entry.price - discount).toFixed(2)})`,
+    kind: "buy",
+  });
+  await log(
+    "ok",
+    `coupon applied: ${coupon.code} on ${entry.itemTitle} — $${discount.toFixed(2)} off at ${entry.retailer}`,
+  );
+  res.json({ entry, discount });
+});
+
+/** DELETE /api/cart/:id/coupon — drop the applied code. */
+cartRouter.delete("/cart/:id/coupon", async (req, res) => {
+  const entry = await CartEntry.findById(req.params.id);
+  if (!entry) {
+    res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  if (!entry.couponCode) {
+    res.status(409).json({ error: "no coupon on this entry" });
+    return;
+  }
+
+  await log(
+    "info",
+    `coupon removed: ${entry.couponCode} on ${entry.itemTitle}`,
+  );
+  entry.couponCode = undefined;
+  entry.couponDiscount = 0;
+  await entry.save();
+  res.json({ entry });
 });
 
 /** POST /api/cart — reserve a watch item in the cart. */
@@ -151,7 +253,7 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
         {
           amount: {
             currency_code: entry.currency,
-            value: entry.price.toFixed(2),
+            value: entryTotal(entry).toFixed(2),
           },
           description: entry.itemTitle,
         },
@@ -167,8 +269,8 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
     await HistoryEntry.create({
       item: entry.watchItem,
       itemTitle: entry.itemTitle,
-      action: "Checkout started",
-      detail: `PayPal order ${response.result.id} — awaiting buyer approval`,
+    action: "Checkout started",
+    detail: `PayPal order ${response.result.id} — $${entryTotal(entry).toFixed(2)} after coupon, awaiting buyer approval`,
       kind: "buy",
     });
     await log(
@@ -225,13 +327,13 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
     await HistoryEntry.create({
       item: entry.watchItem,
       itemTitle: entry.itemTitle,
-      action: "Order captured",
-      detail: `PayPal capture ${response.result.status} — $${entry.price.toFixed(2)} at ${entry.retailer}`,
+    action: "Order captured",
+    detail: `PayPal capture ${response.result.status} — $${entryTotal(entry).toFixed(2)} at ${entry.retailer}${entry.couponCode ? ` with ${entry.couponCode}` : ""}`,
       kind: "buy",
     });
     await log(
       "ok",
-      `order captured: ${entry.itemTitle} — $${entry.price.toFixed(2)} (${response.result.status})`,
+      `order captured: ${entry.itemTitle} — $${entryTotal(entry).toFixed(2)} (${response.result.status})`,
     );
     res.json({ orderId: response.result.id, status: response.result.status });
   } catch (err) {

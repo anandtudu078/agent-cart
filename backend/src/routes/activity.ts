@@ -12,10 +12,18 @@ type EventLine = {
   message: string;
   source?: string | null;
   alert?: boolean;
+  /** null/undefined = system line; otherwise only that user may see it. */
+  owner?: unknown;
 };
 
 export const activityRouter = Router();
 const bus = new EventEmitter();
+
+// shortcut: one global cap on open SSE tails — an authenticated client could
+// otherwise hold unbounded connections open; raise it if a real deployment
+// ever needs more than 100 concurrent dashboards
+const MAX_STREAMS = 100;
+let openStreams = 0;
 
 let lastSeen = new Date();
 
@@ -40,6 +48,11 @@ setInterval(poll, POLL_MS).unref();
  * few lines, then follows inserts).
  */
 activityRouter.get("/activity/stream", async (req, res) => {
+  if (openStreams >= MAX_STREAMS) {
+    res.status(503).json({ error: "too many open activity streams" });
+    return;
+  }
+  openStreams += 1;
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -47,7 +60,14 @@ activityRouter.get("/activity/stream", async (req, res) => {
     "X-Accel-Buffering": "no",
   });
 
-  const send = (line: EventLine) => res.write(`data: ${JSON.stringify(line)}\n\n`);
+  // only forward system lines (no owner) and this viewer's own lines —
+  // one account's cart activity must never stream into another's dashboard
+  const viewer = req.userId!;
+  const send = (line: EventLine) => {
+    const owner = line.owner == null ? null : String(line.owner);
+    if (owner && owner !== viewer) return;
+    res.write(`data: ${JSON.stringify(line)}\n\n`);
+  };
 
   const recent = await ActivityEvent.find()
     .sort({ createdAt: -1 })
@@ -58,7 +78,10 @@ activityRouter.get("/activity/stream", async (req, res) => {
   if (newest && newest > lastSeen) lastSeen = newest;
 
   bus.on("event", send);
-  req.on("close", () => bus.off("event", send));
+  req.on("close", () => {
+    bus.off("event", send);
+    openStreams -= 1;
+  });
 });
 
 /**
@@ -83,6 +106,7 @@ activityRouter.post("/activity", async (req, res) => {
     level,
     message: message.trim(),
     source: body.source,
+    owner: req.userId,
   });
   bus.emit("event", doc.toObject());
   res.status(201).json({ id: doc.id });

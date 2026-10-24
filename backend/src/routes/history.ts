@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { HistoryEntry } from "../models/index.js";
+import { ownedByUser } from "../middleware/auth.js";
 
 export const historyRouter = Router();
 
@@ -46,7 +47,11 @@ historyRouter.get("/history", async (req, res) => {
   } = {};
   if (kind) filter.kind = kind as (typeof KINDS)[number];
   if (item) filter.item = new mongoose.Types.ObjectId(item);
-  const entries = await HistoryEntry.find(filter)
+  // ownerless rows are shared demo data; everything else stays per-account
+  const entries = await HistoryEntry.find({
+    ...filter,
+    ...ownedByUser(req.userId!),
+  })
     .sort({ occurredAt: -1 })
     .limit(limit)
     .lean();
@@ -85,6 +90,7 @@ historyRouter.post("/history", async (req, res) => {
     detail: body.detail.trim(),
     kind,
     price: typeof body.price === "number" ? body.price : undefined,
+    owner: req.userId,
   });
   res.status(201).json({ entry });
 });

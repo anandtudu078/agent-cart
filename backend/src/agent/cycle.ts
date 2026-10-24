@@ -1,3 +1,4 @@
+import type { Types } from "mongoose";
 import {
   WatchItem,
   HistoryEntry,
@@ -55,8 +56,16 @@ async function log(
   level: "info" | "ok" | "warn" | "buy",
   message: string,
   alert = false,
+  /** null/undefined = system line visible to every signed-in user. */
+  owner?: Types.ObjectId | string | null,
 ): Promise<void> {
-  await ActivityEvent.create({ level, message, source: "agent-cycle", alert });
+  await ActivityEvent.create({
+    level,
+    message,
+    source: "agent-cycle",
+    alert,
+    owner,
+  });
 }
 
 function jittered(price: number): number {
@@ -117,6 +126,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         detail: `$${nextPrice.toFixed(2)} at ${item.retailer} — ${targetGap(nextPrice, item.targetPrice)}`,
         kind: "scan",
         price: nextPrice,
+        owner: item.owner,
       });
 
       if (hitTarget && !wasDrop) {
@@ -128,11 +138,13 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           detail: `$${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} on ${item.retailer} (target $${item.targetPrice.toFixed(2)})`,
           kind: "alert",
           price: nextPrice,
+          owner: item.owner,
         });
         await log(
           "warn",
           `price drop: ${item.title} $${oldPrice.toFixed(2)} → $${nextPrice.toFixed(2)} at ${item.retailer}`,
           true, // surfaced as a toast/desktop notification on the dashboard
+          item.owner,
         );
         if (item.autoBuy) {
           const held = await CartEntry.findOne({
@@ -143,6 +155,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
             await log(
               "info",
               `auto-buy skipped: ${item.title} is already in the cart`,
+              false,
+              item.owner,
             );
           } else {
             await CartEntry.create({
@@ -161,11 +175,13 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
               detail: `Pulled into the cart at $${nextPrice.toFixed(2)} (target $${item.targetPrice.toFixed(2)}) — approve checkout to buy`,
               kind: "buy",
               price: nextPrice,
+              owner: item.owner,
             });
             await log(
               "buy",
               `auto-buy: ${item.title} $${nextPrice.toFixed(2)} at ${item.retailer} — held in cart`,
               true,
+              item.owner,
             );
           }
         }

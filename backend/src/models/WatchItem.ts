@@ -21,6 +21,8 @@ export const watchItemSchema = new Schema(
       index: true,
     },
     pollIntervalSec: { type: Number, default: 30, min: 5 },
+    // when a scan drops price to target, pull it into the cart automatically
+    autoBuy: { type: Boolean, default: false, index: true },
     lastCheckedAt: { type: Date },
     // optional so seeded demo rows stay shared; null = visible to any signed-in user
     owner: { type: Schema.Types.ObjectId, ref: "User", index: true },

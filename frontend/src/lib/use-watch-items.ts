@@ -14,6 +14,7 @@ export interface WatchedItem {
   target: number;
   deltaPct: number;
   status: WatchStatus;
+  autoBuy: boolean;
   updated: string;
 }
 
@@ -26,6 +27,7 @@ interface RawItem {
   targetPrice: number;
   deltaPct?: number;
   status: WatchStatus;
+  autoBuy?: boolean;
   lastCheckedAt?: string;
   createdAt?: string;
 }
@@ -68,6 +70,7 @@ export function useWatchItems() {
             target: item.targetPrice,
             deltaPct: item.deltaPct ?? 0,
             status: item.status,
+            autoBuy: item.autoBuy ?? false,
             updated: timeAgo(item.lastCheckedAt ?? item.createdAt),
           })),
         );
@@ -114,7 +117,7 @@ export function useWatchItems() {
   const setItem = useCallback(
     async (
       id: string,
-      patch: { status?: WatchStatus; targetPrice?: number },
+      patch: { status?: WatchStatus; targetPrice?: number; autoBuy?: boolean },
     ): Promise<string | null> => {
       try {
         const res = await fetch(`${API_BASE}/api/watch-items/${id}`, {

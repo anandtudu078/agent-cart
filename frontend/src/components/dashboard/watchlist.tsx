@@ -1,7 +1,14 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { LineChart as ChartIcon, Pause, Play, ShoppingCart, Trash2 } from "lucide-react";
+import {
+  LineChart as ChartIcon,
+  Pause,
+  Play,
+  ShoppingCart,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { useCart } from "@/lib/use-cart";
 import { useWatchItems } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
@@ -97,6 +104,30 @@ export function Watchlist() {
               </td>
               <td className="px-4 py-3 text-right">
                 <span className="flex items-center justify-end gap-1">
+                <button
+                  type="button"
+                  aria-label={`Toggle auto-buy for ${item.title}`}
+                  aria-pressed={item.autoBuy}
+                  title={
+                    item.autoBuy
+                      ? "Auto-buy on — pulls the item into the cart when it hits target"
+                      : "Auto-buy off — enable to reserve automatically on a drop"
+                  }
+                  onClick={() => {
+                    void setItem(item.id, { autoBuy: !item.autoBuy }).then(
+                      (error) => {
+                        if (error) setCartNotice(error);
+                      },
+                    );
+                  }}
+                  className={`rounded-md p-1.5 transition-colors ${
+                    item.autoBuy
+                      ? "bg-amber-500/15 text-amber-400"
+                      : "text-muted hover:bg-amber-500/10 hover:text-amber-400"
+                  }`}
+                >
+                  <Zap className="h-3.5 w-3.5" aria-hidden />
+                </button>
                 <button
                   type="button"
                   aria-label={

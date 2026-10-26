@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import type { NewWatchItem } from "@/lib/use-watch-items";
+import { API_BASE } from "@/lib/api";
 
 interface Props {
   onAdd: (input: NewWatchItem) => Promise<string | null>;
@@ -18,6 +19,45 @@ export function AddWatchItemForm({ onAdd }: Props) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resolving, setResolving] = useState(false);
+
+  /** Fill title/retailer/price from the pasted URL (POST .../resolve). */
+  async function resolveUrl() {
+    if (!url.trim()) {
+      setError("paste a product URL first");
+      return;
+    }
+    setResolving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/watch-items/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+        title?: string;
+        price?: number;
+        retailer?: string;
+      } | null;
+      if (!res.ok) {
+        setError(data?.error ?? "could not read that page");
+        return;
+      }
+      if (data?.title) setTitle(data.title);
+      if (data?.retailer) setRetailer(data.retailer);
+      if (typeof data?.price === "number") setPrice(String(data.price));
+      if (data?.title === undefined && typeof data?.price !== "number") {
+        setError("page had no title or price — fill the rest in manually");
+      }
+    } catch {
+      setError("Could not reach the API (http://localhost:4000)");
+    } finally {
+      setResolving(false);
+    }
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -109,13 +149,25 @@ export function AddWatchItemForm({ onAdd }: Props) {
       </label>
       <label className="min-w-52 flex-[2] text-xs text-muted">
         Product URL (optional — enables live prices)
+        <span className="mt-1.5 flex gap-2">
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          className="mt-1.5 w-full rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+          className="min-w-0 flex-1 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
           placeholder="https://www.amazon.com/dp/…"
         />
+        <button
+          type="button"
+          disabled={resolving}
+          onClick={() => void resolveUrl()}
+          title="Read the title, price and retailer from that page"
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-panel-border px-3 py-2 text-xs text-zinc-300 transition-colors hover:border-cyan-500/40 hover:text-white disabled:opacity-60"
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden />
+          {resolving ? "Reading…" : "Fetch"}
+        </button>
+        </span>
       </label>
       <div className="flex items-center gap-2">
         <button

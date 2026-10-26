@@ -122,13 +122,12 @@ export function priceFromMeta(html: string): number | null {
  * page, or a number that doesn't look like the current price all come back
  * as `{ok: false}` so the caller keeps the last known price instead.
  */
-export async function fetchLivePrice(
-  url: string,
-  currentPrice: number,
-): Promise<PriceFetch> {
+type PageFetch = { ok: true; html: string } | { ok: false; error: string };
+
+/** GET a page once — shared by the price fetch and the add-by-URL resolver. */
+async function fetchPage(url: string): Promise<PageFetch> {
   if (!isPublicHttpUrl(url)) return { ok: false, error: "url is not fetchable" };
 
-  let html: string;
   try {
     const res = await fetch(url, {
       redirect: "follow",
@@ -145,13 +144,22 @@ export async function fetchLivePrice(
       return { ok: false, error: `unexpected content-type ${type.split(";")[0]}` };
     }
     // cap the read — a product page is a few hundred KB, a dump is not
-    html = (await res.text()).slice(0, 2_000_000);
+    return { ok: true, html: (await res.text()).slice(0, 2_000_000) };
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message.slice(0, 160) : "fetch failed",
     };
   }
+}
+
+export async function fetchLivePrice(
+  url: string,
+  currentPrice: number,
+): Promise<PriceFetch> {
+  const page = await fetchPage(url);
+  if (!page.ok) return page;
+  const html = page.html;
 
   let price: number | null = null;
   LD_JSON.lastIndex = 0;
@@ -179,4 +187,107 @@ export async function fetchLivePrice(
     };
   }
   return { ok: true, price };
+}
+
+/** What we could read off a product page, for the add-by-URL form. */
+export interface ProductMeta {
+  title: string | null;
+  price: number | null;
+  retailer: string;
+}
+
+/** Product name from a JSON-LD tree (Product.name), else null. */
+export function titleFromJsonLd(parsed: unknown): string | null {
+  for (const node of walk(parsed)) {
+    if (!isProductLike(node)) continue;
+    const name = node.name;
+    if (typeof name === "string" && name.trim()) {
+      return name.trim().slice(0, 200);
+    }
+  }
+  return null;
+}
+
+/** Product title from og:title / twitter:title, else the bare <title>. */
+export function titleFromMeta(html: string): string | null {
+  const wanted = new Set(["og:title", "twitter:title"]);
+  for (const match of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const attrs = new Map<string, string>();
+    ATTR.lastIndex = 0;
+    for (const attr of match.matchAll(ATTR)) {
+      attrs.set((attr[1] ?? "").toLowerCase(), attr[2] ?? "");
+    }
+    const key = (attrs.get("property") ?? attrs.get("name") ?? "").toLowerCase();
+    if (!wanted.has(key)) continue;
+    const title = (attrs.get("content") ?? "").trim();
+    if (title) return title.slice(0, 200);
+  }
+  const tag = /<title[^>]*>([\s\S]{1,300}?)<\/title>/i.exec(html);
+  const text = (tag?.[1] ?? "").replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 200) : null;
+}
+
+// shortcut: a handful of domains the demo targets — everything else falls
+// back to the hostname's first label
+const RETAILERS: Record<string, string> = {
+  "amazon.com": "Amazon",
+  "amazon.in": "Amazon",
+  "amzn.in": "Amazon",
+  "bestbuy.com": "Best Buy",
+  "walmart.com": "Walmart",
+  "target.com": "Target",
+  "newegg.com": "Newegg",
+  "ebay.com": "eBay",
+  "etsy.com": "Etsy",
+  "aliexpress.com": "AliExpress",
+  "flipkart.com": "Flipkart",
+  "keychron.com": "Keychron",
+};
+
+/** Retailer name guessed from the URL host ("www.bestbuy.com" → Best Buy). */
+export function retailerFromUrl(raw: string): string {
+  let host = "";
+  try {
+    host = new URL(raw).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+  for (const [domain, name] of Object.entries(RETAILERS)) {
+    if (host === domain || host.endsWith(`.${domain}`)) return name;
+  }
+  const label = host.split(".")[0] ?? host;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
+ * Read title/price/retailer off a product page — what the "fetch from URL"
+ * button fills into the add-watch form. A page that yields only some of the
+ * three still succeeds; the user fills in the rest.
+ */
+export async function resolveProduct(
+  url: string,
+): Promise<{ ok: true; meta: ProductMeta } | { ok: false; error: string }> {
+  const page = await fetchPage(url);
+  if (!page.ok) return page;
+  const html = page.html;
+
+  let title: string | null = null;
+  let price: number | null = null;
+  LD_JSON.lastIndex = 0;
+  for (const block of html.matchAll(LD_JSON)) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse((block[1] ?? "").trim());
+    } catch {
+      continue;
+    }
+    title ??= titleFromJsonLd(parsed);
+    price ??= priceFromJsonLd(parsed);
+    if (title !== null && price !== null) break;
+  }
+  title ??= titleFromMeta(html);
+  price ??= priceFromMeta(html);
+
+  if (price !== null && (price < 0.01 || price > 1_000_000)) price = null;
+  return { ok: true, meta: { title, price, retailer: retailerFromUrl(url) } };
 }

@@ -4,6 +4,9 @@ import {
   parseAmount,
   priceFromJsonLd,
   priceFromMeta,
+  retailerFromUrl,
+  titleFromJsonLd,
+  titleFromMeta,
 } from "./fetch-price.js";
 import { isPublicHttpUrl } from "./url-guard.js";
 
@@ -47,6 +50,22 @@ test("priceFromMeta reads the standard price meta tags", () => {
   `;
   assert.equal(priceFromMeta(html), 175.5);
   assert.equal(priceFromMeta("<p>nothing here</p>"), null);
+});
+
+test("title extraction reads JSON-LD name, then og:title, then <title>", () => {
+  assert.equal(titleFromJsonLd({ "@type": "Product", name: "Q1 Pro Keyboard" }), "Q1 Pro Keyboard");
+  assert.equal(titleFromJsonLd({ "@type": "Article", name: "Blog post" }), null);
+  assert.equal(titleFromMeta('<meta property="og:title" content="WH-1000XM5" />'), "WH-1000XM5");
+  assert.equal(titleFromMeta("<title>  Sony WH‑1000XM5 · Amazon </title>"), "Sony WH‑1000XM5 · Amazon");
+  assert.equal(titleFromMeta("<p>no title</p>"), null);
+});
+
+test("retailerFromUrl maps known hosts and falls back to the label", () => {
+  assert.equal(retailerFromUrl("https://www.bestbuy.com/site/tv"), "Best Buy");
+  assert.equal(retailerFromUrl("https://smile.amazon.com/dp/B0"), "Amazon");
+  assert.equal(retailerFromUrl("https://www.target.com/p/x"), "Target");
+  assert.equal(retailerFromUrl("https://shop.example.co.uk/item"), "Shop");
+  assert.equal(retailerFromUrl("not-a-url"), "");
 });
 
 test("isPublicHttpUrl rejects internal and non-http targets", () => {

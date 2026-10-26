@@ -25,6 +25,9 @@ Built today:
 | Agent service | ✅ Python/LangChain service (`agent-service/`, FastAPI on :8000) — LLM price reasoning when `OPENAI_API_KEY` is set, deterministic fallback otherwise; the Node scan cycle delegates to it and degrades to local jitter when it is down |
 | Commerce | ✅ cart hold/release + PayPal checkout/capture routes (`@paypal/checkout-server-sdk`, sandbox by default) |
 | API surface | ✅ watch-item CRUD + history routes |
+| Live prices | ✅ scan cycle fetches the product URL (JSON-LD / price meta) and marks each row `ok · stale · error · simulated` — a failed fetch keeps the last real price instead of inventing one |
+| Price history | ✅ `price_points` collection written once per observed price (90-day TTL) → `GET /api/watch-items/:id/series` feeds the chart |
+| Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
 
 ## Architecture
 
@@ -107,7 +110,8 @@ returns 401.
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
 - `GET /api/watch-items` — full watchlist, newest first
-- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}`
+- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}` — with a `url`, the agent fetches that page for the live price; without one it simulates
+- `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
 - `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, or `autoBuy`
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
@@ -130,7 +134,8 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 ## Data model
 
-- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target)
+- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`
+- **price_points** — one row per observed price (`item`, `price`, `at`, `source live | agent-service | simulated`), auto-expire after 90 days; the chart reads these
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
 - **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`
@@ -149,6 +154,10 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
   one client can't hold unbounded server resources.
 - `helmet` security headers on the API, `X-Powered-By` disabled on API and
   dashboard; Mongo credentials are redacted from logs.
+- Product URLs the agent fetches and webhook URLs it POSTs to are validated
+  as public `http(s)` hosts (`backend/src/agent/url-guard.ts`) — no
+  `localhost`, RFC1918, link-local/metadata addresses, or non-http schemes,
+  checked both when saved and again before every request.
 - In development the JWT secret is random per boot (logging out on restart);
   production requires `JWT_SECRET`.
 - **Operational note:** if the Atlas password was ever printed to a dev log

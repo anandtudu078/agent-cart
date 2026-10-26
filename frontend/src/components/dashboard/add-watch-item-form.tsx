@@ -15,6 +15,7 @@ export function AddWatchItemForm({ onAdd }: Props) {
   const [retailer, setRetailer] = useState("");
   const [price, setPrice] = useState("");
   const [target, setTarget] = useState("");
+  const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -27,6 +28,7 @@ export function AddWatchItemForm({ onAdd }: Props) {
       retailer: retailer.trim(),
       price: Number(price),
       targetPrice: Number(target),
+      url: url.trim() || undefined,
     });
     setBusy(false);
     if (err) {
@@ -37,6 +39,7 @@ export function AddWatchItemForm({ onAdd }: Props) {
     setRetailer("");
     setPrice("");
     setTarget("");
+    setUrl("");
     setOpen(false);
   }
 
@@ -102,6 +105,16 @@ export function AddWatchItemForm({ onAdd }: Props) {
           onChange={(e) => setTarget(e.target.value)}
           className="mt-1.5 w-full rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
           placeholder="300.00"
+        />
+      </label>
+      <label className="min-w-52 flex-[2] text-xs text-muted">
+        Product URL (optional — enables live prices)
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="mt-1.5 w-full rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+          placeholder="https://www.amazon.com/dp/…"
         />
       </label>
       <div className="flex items-center gap-2">

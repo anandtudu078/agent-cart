@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Trash2, Wallet } from "lucide-react";
+import { BellRing, Trash2, Wallet, Webhook } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useSettings } from "@/lib/use-settings";
 
@@ -14,7 +14,23 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // null = no edit yet, so the field mirrors the stored value until typing
+  const [webhookDraft, setWebhookDraft] = useState<string | null>(null);
+  const webhookUrl = webhookDraft ?? settings.webhookUrl;
   const router = useRouter();
+
+  async function saveWebhook(event: React.FormEvent) {
+    event.preventDefault();
+    const next = webhookUrl.trim();
+    const err = await save({ webhookUrl: next });
+    setNotice(
+      err ??
+        (next
+          ? "Webhook saved — the agent POSTs price drops there."
+          : "Webhook cleared — alerts stay in the app."),
+    );
+    if (!err) setWebhookDraft(null);
+  }
 
   async function requestNotifications() {
     if (typeof Notification === "undefined") {
@@ -117,6 +133,39 @@ export default function SettingsPage() {
           />
           Enable desktop notifications
         </label>
+      </section>
+
+      {/* Webhook alerts */}
+      <section className="rounded-xl border border-panel-border bg-panel/60 p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Webhook className="h-4 w-4 text-cyan-400" aria-hidden />
+          Webhook alerts
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          The agent POSTs a JSON payload here the moment an item hits its
+          target price — works with a Discord or Slack incoming webhook, or
+          any endpoint that accepts JSON. Leave empty to keep alerts in-app.
+        </p>
+        <form
+          onSubmit={(event) => void saveWebhook(event)}
+          className="mt-4 flex flex-wrap items-center gap-2"
+        >
+          <input
+            type="url"
+            value={webhookUrl}
+            onChange={(event) => setWebhookDraft(event.target.value)}
+            placeholder="https://discord.com/api/webhooks/…"
+            aria-label="Price-drop webhook URL"
+            className="min-w-0 flex-1 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10 disabled:opacity-60"
+          >
+            Save webhook
+          </button>
+        </form>
       </section>
 
       {/* Danger zone */}

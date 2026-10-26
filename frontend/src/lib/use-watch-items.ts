@@ -5,6 +5,9 @@ import { API_BASE } from "./api";
 
 export type WatchStatus = "watching" | "drop" | "paused";
 
+/** Where the last price came from: live fetch, or why it wasn't. */
+export type FetchStatus = "ok" | "stale" | "error" | "simulated";
+
 export interface WatchedItem {
   id: string;
   title: string;
@@ -15,6 +18,8 @@ export interface WatchedItem {
   deltaPct: number;
   status: WatchStatus;
   autoBuy: boolean;
+  fetchStatus: FetchStatus;
+  lastFetchError?: string;
   updated: string;
 }
 
@@ -28,6 +33,8 @@ interface RawItem {
   deltaPct?: number;
   status: WatchStatus;
   autoBuy?: boolean;
+  fetchStatus?: FetchStatus;
+  lastFetchError?: string;
   lastCheckedAt?: string;
   createdAt?: string;
 }
@@ -49,6 +56,8 @@ export interface NewWatchItem {
   retailer: string;
   price: number;
   targetPrice: number;
+  /** Product page — when set, the agent fetches the live price from it. */
+  url?: string;
 }
 
 /** Live watchlist from GET /api/watch-items, with add/remove mutations. */
@@ -71,6 +80,8 @@ export function useWatchItems() {
             deltaPct: item.deltaPct ?? 0,
             status: item.status,
             autoBuy: item.autoBuy ?? false,
+            fetchStatus: item.fetchStatus ?? "simulated",
+            lastFetchError: item.lastFetchError,
             updated: timeAgo(item.lastCheckedAt ?? item.createdAt),
           })),
         );

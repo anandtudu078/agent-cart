@@ -2,6 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { WatchItem, PricePoint } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
+import { resolveProduct } from "../agent/fetch-price.js";
 
 export const watchItemsRouter = Router();
 
@@ -16,7 +17,31 @@ watchItemsRouter.get("/watch-items", async (req, res) => {
 });
 
 /**
- * GET /api/watch-items/:id/series — price points for the chart, oldest first.
+ * POST /api/watch-items/resolve — read title/price/retailer off a product
+ * page so the add form can be filled from a pasted URL. No row is written.
+ */
+watchItemsRouter.post("/watch-items/resolve", async (req, res) => {
+  const body = (req.body ?? {}) as { url?: unknown };
+  const url = typeof body.url === "string" ? body.url.trim() : "";
+  if (!url) {
+    res.status(400).json({ error: "url is required" });
+    return;
+  }
+
+  const result = await resolveProduct(url);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  // nothing found is still a valid answer — the form keeps what the user typed
+  if (!result.meta.title && result.meta.price === null) {
+    res.status(422).json({ error: "no product title or price found in that page" });
+    return;
+  }
+  res.json({ url, ...result.meta });
+});
+
+/** GET /api/watch-items/:id/series — price points for the chart, oldest first.
  * Query: ?limit=1..500 (newest N, returned in chronological order)
  */
 watchItemsRouter.get("/watch-items/:id/series", async (req, res) => {

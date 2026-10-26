@@ -15,3 +15,4 @@ export {
   cartEntrySchema,
   type CartEntryDoc,
 } from "./CartEntry.js";
+export { PricePoint, pricePointSchema, type PricePointDoc } from "./PricePoint.js";

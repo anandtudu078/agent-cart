@@ -71,6 +71,15 @@ app.use(
       res.status(400).json({ error: "invalid id" });
       return;
     }
+    // schema validation failures (enum/min/maxlength) are also client input
+    // errors — a 500 here would hide a bad request behind an internal error
+    if (err.name === "ValidationError") {
+      res.status(400).json({
+        error:
+          env.nodeEnv === "production" ? "invalid request body" : err.message,
+      });
+      return;
+    }
     const status = (err as { status?: number }).status;
     if (status === 413) {
       res.status(413).json({ error: "request body too large" });

@@ -5,12 +5,14 @@ import { ActivityEvent, CartEntry, HistoryEntry, WatchItem } from "./models/inde
 
 const RESET = process.argv.includes("--reset");
 
+// shortcut: demo rows carry no product URL on purpose — a live fetch of
+// these fake paths would 404 every cycle and freeze the demo prices. No url
+// = the agent simulates, and the watchlist chip says so (`simulated`).
 const ITEMS = [
   {
     title: "Sony WH-1000XM5 Headphones",
     retailer: "Amazon",
     emoji: "🎧",
-    url: "https://www.amazon.com/dp/B09XS7JWHH",
     price: 328.0,
     targetPrice: 300.0,
     deltaPct: -6.2,
@@ -21,7 +23,6 @@ const ITEMS = [
     title: "Keychron Q1 Pro Keyboard",
     retailer: "Keychron",
     emoji: "⌨️",
-    url: "https://www.keychron.com/product/q1-pro",
     price: 199.0,
     targetPrice: 175.0,
     deltaPct: 0,
@@ -32,7 +33,6 @@ const ITEMS = [
     title: 'LG C4 42" OLED TV',
     retailer: "Best Buy",
     emoji: "📺",
-    url: "https://www.bestbuy.com/site/lg-c4-42",
     price: 899.99,
     targetPrice: 799.0,
     deltaPct: -3.1,
@@ -43,7 +43,6 @@ const ITEMS = [
     title: "Dyson V15 Detect",
     retailer: "Walmart",
     emoji: "🧹",
-    url: "https://www.walmart.com/ip/dyson-v15-detect",
     price: 549.99,
     targetPrice: 450.0,
     deltaPct: 1.8,
@@ -54,7 +53,6 @@ const ITEMS = [
     title: "Apple Watch Series 10",
     retailer: "Target",
     emoji: "⌚",
-    url: "https://www.target.com/p/apple-watch-series-10",
     price: 379.0,
     targetPrice: 340.0,
     deltaPct: -1.4,

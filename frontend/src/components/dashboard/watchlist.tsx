@@ -10,10 +10,48 @@ import {
   Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/use-cart";
-import { useWatchItems } from "@/lib/use-watch-items";
+import { useWatchItems, type FetchStatus } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { PriceChart } from "./price-chart";
 import { formatPrice, useSettings } from "@/lib/use-settings";
+
+const FETCH_CHIPS: Record<FetchStatus, { label: string; className: string }> = {
+  ok: { label: "live", className: "border-emerald-500/40 text-emerald-400" },
+  stale: { label: "stale", className: "border-amber-500/40 text-amber-400" },
+  error: {
+    label: "fetch failed",
+    className: "border-red-500/40 text-red-400",
+  },
+  simulated: {
+    label: "simulated",
+    className: "border-panel-border text-muted",
+  },
+};
+
+/** Where this row's price came from; the tooltip carries the fetch error. */
+function FetchChip({
+  status,
+  error,
+}: {
+  status: FetchStatus;
+  error?: string;
+}) {
+  const chip = FETCH_CHIPS[status];
+  const hint =
+    status === "simulated"
+      ? "No product URL — this price is simulated by the agent"
+      : status === "ok"
+        ? "Fetched live from the product page on the last scan"
+        : (error ?? "Last fetch failed — keeping the last real price");
+  return (
+    <span
+      title={hint}
+      className={`rounded-full border px-2 py-0.5 text-[11px] ${chip.className}`}
+    >
+      {chip.label}
+    </span>
+  );
+}
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
@@ -95,8 +133,11 @@ export function Watchlist() {
                 {item.deltaPct.toFixed(1)}%
               </td>
               <td className="px-4 py-3">
+                <span className="flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full border border-panel-border px-2 py-0.5 text-[11px] capitalize text-zinc-300">
                   {item.status}
+                </span>
+                <FetchChip status={item.fetchStatus} error={item.lastFetchError} />
                 </span>
               </td>
               <td className="px-4 py-3 text-right font-mono text-[11px] text-muted">

@@ -10,6 +10,9 @@ const settingsSchema = new Schema(
     },
     // gates browser notifications for price drops (settings page)
     priceAlerts: { type: Boolean, default: true },
+    // where the agent POSTs a price-drop alert — Discord/Slack incoming
+    // webhook or any endpoint that takes JSON; empty = alerts stay in-app
+    webhookUrl: { type: String, default: "", trim: true, maxlength: 2_000 },
   },
   { _id: false, versionKey: false },
 );

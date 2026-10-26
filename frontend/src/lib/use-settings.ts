@@ -6,9 +6,15 @@ import { API_BASE } from "./api";
 export interface UserSettings {
   currency: string;
   priceAlerts: boolean;
+  /** Empty = in-app only; otherwise the agent POSTs drops to this URL. */
+  webhookUrl: string;
 }
 
-const DEFAULTS: UserSettings = { currency: "USD", priceAlerts: true };
+const DEFAULTS: UserSettings = {
+  currency: "USD",
+  priceAlerts: true,
+  webhookUrl: "",
+};
 
 // shortcut: module-level cache so the sidebar, watchlist, and toasts share
 // one fetch — upgrade to a context when more consumers appear

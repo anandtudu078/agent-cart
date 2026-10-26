@@ -73,32 +73,53 @@ export interface PricePoint {
   price: number;
 }
 
+interface RawPoint {
+  at: string;
+  price: number;
+  source: string;
+}
+
 /**
- * Fetch the price series for one watch item (for the chart). Bypasses the
- * hook pattern — callers load it on demand inside their own component.
+ * Price series for one watch item (for the chart) from
+ * GET /api/watch-items/:id/series — real observed prices, oldest first.
+ * Bypasses the hook pattern: callers load it on demand in their component.
  */
 export async function fetchItemSeries(
   itemId: string,
 ): Promise<PricePoint[] | null> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/history?item=${encodeURIComponent(itemId)}&limit=100`,
+      `${API_BASE}/api/watch-items/${encodeURIComponent(itemId)}/series?limit=300`,
       { credentials: "include" },
     );
     if (!res.ok) return null;
-    const data = (await res.json()) as { entries?: RawEntry[] };
-    // oldest first so the chart reads left-to-right in time
-    return (data.entries ?? [])
-      .filter((entry) => typeof entry.price === "number")
-      .map((entry) => ({
-        at: new Date(entry.occurredAt).toLocaleTimeString("en-US", {
-          hour12: false,
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        price: entry.price!,
-      }))
-      .reverse();
+    const data = (await res.json()) as { points?: RawPoint[] };
+    const series = (data.points ?? [])
+      .filter((point) => typeof point.price === "number")
+      .map((point) => ({ ts: new Date(point.at), price: point.price }));
+    if (series.length === 0) return [];
+
+    // a same-day series reads as clock time; once it spans days the labels
+    // need the date too or every point looks like a repeat
+    const first = series[0]?.ts.getTime() ?? 0;
+    const last = series[series.length - 1]?.ts.getTime() ?? 0;
+    const spansDays = last - first > 24 * 3600 * 1000;
+    return series.map(({ ts, price }) => ({
+      at: spansDays
+        ? ts.toLocaleString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })
+        : ts.toLocaleTimeString("en-US", {
+            hour12: false,
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+      price,
+    }));
   } catch {
     return null;
   }

@@ -24,6 +24,19 @@ export const watchItemSchema = new Schema(
     // when a scan drops price to target, pull it into the cart automatically
     autoBuy: { type: Boolean, default: false, index: true },
     lastCheckedAt: { type: Date },
+    // outcome of the last live fetch of `url`:
+    //   ok        — fetched this cycle, price is real
+    //   stale     — fetch failed, price still the last real one
+    //   error     — fetch failed and no real price has ever been read
+    //   simulated — no url configured; price comes from the agent/jitter
+    fetchStatus: {
+      type: String,
+      enum: ["ok", "stale", "error", "simulated"],
+      default: "simulated",
+      index: true,
+    },
+    lastFetchError: { type: String, maxlength: 200 },
+    fetchedAt: { type: Date },
     // optional so seeded demo rows stay shared; null = visible to any signed-in user
     owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },

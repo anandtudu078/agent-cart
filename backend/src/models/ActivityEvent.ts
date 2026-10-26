@@ -18,6 +18,10 @@ export const activityEventSchema = new Schema(
     source: { type: String, trim: true },
     // true on lines the UI should also surface as a desktop/toast alert
     alert: { type: Boolean, default: false },
+    // null = system/agent line (visible to every signed-in user); set to the
+    // acting user's id for their own actions so one account's feed never
+    // leaks into another's. Existing rows have no owner → treated as null.
+    owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },
   {
     timestamps: { createdAt: true, updatedAt: false },

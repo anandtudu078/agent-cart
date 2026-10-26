@@ -2,13 +2,22 @@ import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
-import { CartEntry, User, WatchItem } from "../models/index.js";
+import {
+  ActivityEvent,
+  CartEntry,
+  HistoryEntry,
+  PricePoint,
+  User,
+  WatchItem,
+} from "../models/index.js";
 import { authLimiter, currentUserId } from "../middleware/auth.js";
+import { isPublicHttpUrl } from "../agent/url-guard.js";
 
 export const authRouter = Router();
 
-// brute-force protection on every auth route (mounted at /api/auth)
-authRouter.use(authLimiter);
+// brute-force protection on the credential-checking routes only — throttling
+// GET /me, /settings or logout here would lock a signed-in user out of their
+// own account after 10 requests/15 min
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE = "agentcart_session";
@@ -26,7 +35,7 @@ function startSession(res: Response, userId: string) {
 }
 
 /** POST /api/auth/signup — create an account and log in. */
-authRouter.post("/signup", async (req, res) => {
+authRouter.post("/signup", authLimiter, async (req, res) => {
   const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
   // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
   const email =
@@ -57,7 +66,7 @@ authRouter.post("/signup", async (req, res) => {
 });
 
 /** POST /api/auth/login */
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", authLimiter, async (req, res) => {
   const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
   // typeof checks first: operator payloads like {"$ne": ""} must 400, not 500
   const email =
@@ -106,9 +115,13 @@ authRouter.patch("/settings", async (req, res) => {
     res.status(401).json({ error: "not authenticated" });
     return;
   }
-  const body = (req.body ?? {}) as { currency?: unknown; priceAlerts?: unknown };
+  const body = (req.body ?? {}) as {
+    currency?: unknown;
+    priceAlerts?: unknown;
+    webhookUrl?: unknown;
+  };
 
-  const patch: { currency?: string; priceAlerts?: boolean } = {};
+  const patch: { currency?: string; priceAlerts?: boolean; webhookUrl?: string } = {};
   if (body.currency !== undefined) {
     if (
       typeof body.currency !== "string" ||
@@ -126,6 +139,18 @@ authRouter.patch("/settings", async (req, res) => {
     }
     patch.priceAlerts = body.priceAlerts;
   }
+  if (body.webhookUrl !== undefined) {
+    const url = typeof body.webhookUrl === "string" ? body.webhookUrl.trim() : null;
+    // empty string clears the alert target; anything else must be a public
+    // http(s) URL — the cycle re-checks this before every POST
+    if (url === null || (url !== "" && !isPublicHttpUrl(url))) {
+      res.status(400).json({
+        error: "webhookUrl must be an empty string or a public http(s) URL",
+      });
+      return;
+    }
+    patch.webhookUrl = url;
+  }
 
   // dotted paths: the fields live under the `settings` subdocument, and a
   // flat $set would silently match nothing
@@ -133,6 +158,8 @@ authRouter.patch("/settings", async (req, res) => {
   if (patch.currency !== undefined) setOps["settings.currency"] = patch.currency;
   if (patch.priceAlerts !== undefined)
     setOps["settings.priceAlerts"] = patch.priceAlerts;
+  if (patch.webhookUrl !== undefined)
+    setOps["settings.webhookUrl"] = patch.webhookUrl;
 
   const user = await User.findByIdAndUpdate(
     userId,
@@ -158,6 +185,14 @@ authRouter.delete("/account", async (req, res) => {
   await Promise.all([
     WatchItem.deleteMany({ owner: userId }),
     CartEntry.deleteMany({ owner: userId }),
+    // decisions about their items + rows they posted themselves — otherwise
+    // the deleted account's activity stays readable in the shared feeds
+    HistoryEntry.deleteMany({
+      $or: [{ owner: userId }, { item: { $in: itemIds } }],
+    }),
+    ActivityEvent.deleteMany({ owner: userId }),
+    // price history outlives its watch item otherwise (TTL alone is 90 days)
+    PricePoint.deleteMany({ owner: userId }),
     User.deleteOne({ _id: userId }),
   ]);
   res.clearCookie(COOKIE, { path: "/" });

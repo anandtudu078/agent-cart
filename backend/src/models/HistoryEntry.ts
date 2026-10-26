@@ -24,6 +24,9 @@ export const historyEntrySchema = new Schema(
     },
     // price at the time of the decision — powers the per-item chart
     price: { type: Number },
+    // null = system/agent decision shared as demo data; set to the acting
+    // user's id so the history feed stays per-account
+    owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
     occurredAt: { type: Date, default: Date.now, index: true },
   },
   {

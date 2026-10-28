@@ -83,6 +83,20 @@ function targetGap(price: number, target: number): string {
 }
 
 /**
+ * True when an item is due for its next scan as of `now`.
+ * Never-checked items are due immediately; otherwise
+ * `lastCheckedAt + pollIntervalSec` must be in the past.
+ */
+export function isDue(
+  lastCheckedAt: Date | null | undefined,
+  pollIntervalSec: number,
+  now: Date,
+): boolean {
+  if (!lastCheckedAt) return true;
+  return lastCheckedAt.getTime() + pollIntervalSec * 1_000 <= now.getTime();
+}
+
+/**
  * One scan cycle: re-check every non-paused watch item, nudge its price,
  * recompute delta/status, and record each decision in history + activity.
  * Returns null when a cycle is already in flight.
@@ -92,8 +106,33 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
   running = true;
   const started = Date.now();
   try {
-    const items = await WatchItem.find({ status: { $ne: "paused" } });
-    await log("info", `cycle started — ${items.length} item(s) queued`);
+    const now = new Date();
+    const candidates = await WatchItem.find({ status: { $ne: "paused" } });
+    // honor each item's own poll interval — only the due ones scan this cycle
+    // (shortcut: filter in JS after the fetch; switch to a $dateAdd aggregation
+    // when a user has hundreds of watched items)
+    const items = candidates.filter((item) =>
+      isDue(item.lastCheckedAt, item.pollIntervalSec, now),
+    );
+    await log(
+      "info",
+      `cycle started — ${items.length} of ${candidates.length} item(s) due`,
+    );
+
+    // nothing due → don't ping the agent service with an empty payload, but
+    // still record the cycle so the dashboard countdown stays honest
+    if (items.length === 0) {
+      const summary: CycleSummary = {
+        scanned: 0,
+        drops: 0,
+        durationMs: Date.now() - started,
+        at: new Date().toISOString(),
+      };
+      lastCycleAt = new Date();
+      lastSummary = summary;
+      await log("info", "cycle complete — no items due, skipped scan");
+      return summary;
+    }
 
     // smart prices from the Python agent service; null → local jitter below
     const service = await fetchPriceUpdates(

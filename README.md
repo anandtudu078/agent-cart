@@ -110,9 +110,9 @@ returns 401.
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
 - `GET /api/watch-items` — full watchlist, newest first
-- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}` — with a `url`, the agent fetches that page for the live price; without one it simulates
+- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle
 - `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
-- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, or `autoBuy`
+- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, or `pollIntervalSec`
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)

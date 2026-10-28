@@ -126,6 +126,7 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
     status?: string;
     deltaPct?: number;
     autoBuy?: boolean;
+    pollIntervalSec?: number;
   };
 
   if (body.status && !STATUSES.includes(body.status as (typeof STATUSES)[number])) {
@@ -135,6 +136,20 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
   if (body.autoBuy !== undefined && typeof body.autoBuy !== "boolean") {
     res.status(400).json({ error: "autoBuy must be a boolean" });
     return;
+  }
+  if (body.pollIntervalSec !== undefined) {
+    if (
+      typeof body.pollIntervalSec !== "number" ||
+      !Number.isFinite(body.pollIntervalSec)
+    ) {
+      res.status(400).json({ error: "pollIntervalSec must be a number" });
+      return;
+    }
+    // clamp to the same 5s..86400s window the agent scheduler enforces
+    body.pollIntervalSec = Math.min(
+      86_400,
+      Math.max(5, Math.trunc(body.pollIntervalSec)),
+    );
   }
 
   const item = await WatchItem.findById(req.params.id);
@@ -152,6 +167,7 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
   if (typeof body.deltaPct === "number") item.deltaPct = body.deltaPct;
   if (body.status) item.status = body.status as (typeof STATUSES)[number];
   if (body.autoBuy !== undefined) item.autoBuy = body.autoBuy;
+  if (typeof body.pollIntervalSec === "number") item.pollIntervalSec = body.pollIntervalSec;
   item.lastCheckedAt = new Date();
   await item.save();
   res.json({ item });

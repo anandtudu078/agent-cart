@@ -11,6 +11,13 @@ import {
 } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { couponDiscount, findCoupon, listCoupons } from "../coupons.js";
+import {
+  isBlockHash,
+  nanoConfigured,
+  quoteXno,
+  verifySendBlock,
+  xnoRate,
+} from "../nano.js";
 
 // default import (not named): Node's CJS/ESM interop can't see the nested
 // `orders` export of this untyped package
@@ -371,4 +378,175 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
       error: `PayPal capture failed: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
+});
+
+/**
+ * How long a Nano quote stays valid: long enough to send from a wallet,
+ * short enough to bound how far the XNO rate can drift against it.
+ */
+const NANO_QUOTE_TTL_MS = 5 * 60_000;
+
+/**
+ * POST /api/cart/:id/nano-quote — freeze the exact XNO amount for this entry.
+ * Reads the live rate (CoinGecko, 60s cache, XNO_USD_RATE fallback) and
+ * stores the quote on the entry so verification later compares against the
+ * number the buyer was shown, not a recomputed one.
+ */
+cartRouter.post("/cart/:id/nano-quote", async (req, res) => {
+  const entry = await CartEntry.findById(req.params.id);
+  if (!entry) {
+    res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  if (entry.status !== "reserved") {
+    res.status(409).json({ error: "entry is no longer reserved" });
+    return;
+  }
+  if (!nanoConfigured()) {
+    res.status(501).json({
+      error:
+        "Nano settlement is not configured — set NANO_ADDRESS to the seller's nano_ account",
+    });
+    return;
+  }
+  // the rate feed is USD-only; quoting any other currency would silently
+  // apply a second conversion the buyer never saw
+  if (entry.currency !== "USD") {
+    res.status(409).json({
+      error: `Nano quotes cover USD totals only — this entry is ${entry.currency}`,
+    });
+    return;
+  }
+
+  const rate = await xnoRate();
+  if (rate === null) {
+    res.status(503).json({
+      error: "no XNO rate available — set XNO_USD_RATE or retry when the price feed responds",
+    });
+    return;
+  }
+
+  const total = entryTotal(entry);
+  const quote = quoteXno(total, rate);
+  if (!quote) {
+    res.status(400).json({
+      error: `total $${total.toFixed(2)} is too small to quote in XNO at 8 decimals`,
+    });
+    return;
+  }
+
+  const expiresAt = new Date(Date.now() + NANO_QUOTE_TTL_MS);
+  entry.nanoQuotedXno = quote.xno;
+  entry.nanoAmountRaw = quote.raw.toString();
+  entry.nanoRate = rate;
+  entry.nanoQuoteExpiresAt = expiresAt;
+  entry.nanoAddress = env.nano.address.trim();
+  entry.nanoBlockHash = undefined;
+  await entry.save();
+  await HistoryEntry.create({
+    item: entry.watchItem,
+    itemTitle: entry.itemTitle,
+    action: "Nano quote issued",
+    detail: `${quote.xno} XNO (rate $${rate.toFixed(4)}/XNO) for $${total.toFixed(2)} at ${entry.retailer} — expires in ${NANO_QUOTE_TTL_MS / 60_000} min`,
+    kind: "buy",
+    owner: entry.owner,
+  });
+  await log(
+    "info",
+    `nano quote: ${entry.itemTitle} — ${quote.xno} XNO for $${total.toFixed(2)}`,
+    false,
+    entry.owner,
+  );
+  res.json({
+    address: env.nano.address.trim(),
+    amountXno: quote.xno,
+    amountRaw: quote.raw.toString(),
+    rate,
+    totalUsd: total,
+    expiresAt: expiresAt.toISOString(),
+  });
+});
+
+/**
+ * POST /api/cart/:id/nano-verify — confirm `{blockHash}` on the ledger and
+ * check the entry out. Read-only against the chain: no wallet, no keys, no
+ * custody — the buyer signs in their own wallet and we verify their send.
+ */
+cartRouter.post("/cart/:id/nano-verify", async (req, res) => {
+  const entry = await CartEntry.findById(req.params.id);
+  if (!entry) {
+    res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  if (entry.status !== "reserved") {
+    res.status(409).json({ error: "entry is no longer reserved" });
+    return;
+  }
+  if (!nanoConfigured()) {
+    res.status(501).json({ error: "Nano settlement is not configured" });
+    return;
+  }
+
+  const body = (req.body ?? {}) as { blockHash?: unknown };
+  if (!isBlockHash(body.blockHash)) {
+    res.status(400).json({ error: "blockHash must be 64 hex characters" });
+    return;
+  }
+  if (!entry.nanoAmountRaw || !entry.nanoQuoteExpiresAt) {
+    res.status(409).json({ error: "no Nano quote on this entry — request one first" });
+    return;
+  }
+  if (entry.nanoQuoteExpiresAt.getTime() <= Date.now()) {
+    res.status(409).json({ error: "Nano quote expired — request a fresh one" });
+    return;
+  }
+
+  const hash = body.blockHash.trim().toLowerCase();
+  const check = await verifySendBlock(hash, {
+    address: env.nano.address.trim(),
+    amountRaw: BigInt(entry.nanoAmountRaw),
+  });
+  if (!check.ok) {
+    // the hash was well-formed, so this is a ledger answer, not a bad request
+    await log(
+      "warn",
+      `nano verify rejected: ${entry.itemTitle} — ${check.error}`,
+      false,
+      entry.owner,
+    );
+    res.status(422).json({ error: check.error });
+    return;
+  }
+
+  entry.status = "checked_out";
+  entry.nanoBlockHash = hash;
+  await entry.save();
+  await HistoryEntry.create({
+    item: entry.watchItem,
+    itemTitle: entry.itemTitle,
+    action: "Nano settled",
+    detail: `send block ${hash.slice(0, 12)}… confirmed — ${entry.nanoQuotedXno} XNO paid to the seller${entry.couponCode ? ` with ${entry.couponCode}` : ""} ($${entryTotal(entry).toFixed(2)} at ${entry.retailer})`,
+    kind: "buy",
+    owner: entry.owner,
+  });
+  await log(
+    "buy",
+    `nano settled: ${entry.itemTitle} — ${entry.nanoQuotedXno} XNO, block ${hash.slice(0, 12)}…`,
+    false,
+    entry.owner,
+  );
+  res.json({
+    status: entry.status,
+    blockHash: hash,
+    amountXno: entry.nanoQuotedXno,
+    paidRaw: check.amountRaw.toString(),
+  });
 });

@@ -144,7 +144,26 @@ export function Watchlist() {
                   <span className="text-zinc-200">{item.title}</span>
                 </span>
               </td>
-              <td className="px-4 py-3 text-muted">{item.retailer}</td>
+              <td className="px-4 py-3 text-muted">
+                <span className="flex items-center gap-1.5">
+                  {item.retailer}
+                  {item.offers.length > 1 && (
+                    <span
+                      title={item.offers
+                        .slice()
+                        .sort((a, b) => a.price - b.price)
+                        .map(
+                          (offer) =>
+                            `${offer.retailer} ${formatPrice(offer.price, settings.currency)}`,
+                        )
+                        .join("  ·  ")}
+                      className="rounded-full border border-cyan-500/40 px-1.5 py-0.5 text-[10px] text-cyan-400"
+                    >
+                      {item.offers.length} offers
+                    </span>
+                  )}
+                </span>
+              </td>
               <td className="px-4 py-3 text-right font-mono">
                 {formatPrice(item.price, settings.currency)}
               </td>

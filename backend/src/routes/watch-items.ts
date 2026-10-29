@@ -3,12 +3,17 @@ import mongoose from "mongoose";
 import { WatchItem, PricePoint } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { resolveProduct } from "../agent/fetch-price.js";
+<<<<<<< HEAD
 import { trendFor, INSUFFICIENT, type Trend } from "../agent/trend.js";
+=======
+import { bestOffer } from "../agent/cycle.js";
+>>>>>>> origin/main
 
 export const watchItemsRouter = Router();
 
 const STATUSES = ["watching", "drop", "paused"] as const;
 
+<<<<<<< HEAD
 // points per item fed to the trend signal — 60 is plenty for the half-split
 // and keeps the aggregation bounded no matter how long an item has run
 const TREND_POINTS = 60;
@@ -43,6 +48,47 @@ async function trendByItem(
 /** GET /api/watch-items — full watchlist, newest first. Each item carries a
  * `trend` verdict (`rising | falling | flat | insufficient`) from its own
  * price history. */
+=======
+// one product, at most this many retailers — enough to compare while keeping
+// a single scan cycle cheap (shortcut: raise alongside a fetch pool)
+const MAX_OFFERS = 5;
+
+interface OfferInput {
+  retailer: string;
+  url?: string;
+  price: number;
+}
+
+/**
+ * Validate the `offers` array of POST/PATCH /api/watch-items.
+ * Returns `{ offers }` on success, `{ error }` on a bad payload, and
+ * `{ offers: undefined }` when the client sent no offers at all.
+ */
+function parseOffers(raw: unknown): { offers?: OfferInput[]; error?: string } {
+  if (raw === undefined || raw === null) return { offers: undefined };
+  if (!Array.isArray(raw)) return { error: "offers must be an array" };
+  if (raw.length === 0) return { error: "offers must not be empty" };
+  if (raw.length > MAX_OFFERS) {
+    return { error: `offers must have at most ${MAX_OFFERS} retailers` };
+  }
+
+  const offers: OfferInput[] = [];
+  for (const rawOffer of raw as Record<string, unknown>[]) {
+    const retailer =
+      typeof rawOffer?.retailer === "string" ? rawOffer.retailer.trim() : "";
+    const price = rawOffer?.price;
+    const url = typeof rawOffer?.url === "string" ? rawOffer.url.trim() : "";
+    if (!retailer) return { error: "every offer needs a retailer" };
+    if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
+      return { error: `price for ${retailer} must be a number` };
+    }
+    offers.push({ retailer, price, url: url || undefined });
+  }
+  return { offers };
+}
+
+/** GET /api/watch-items — full watchlist, newest first. */
+>>>>>>> origin/main
 watchItemsRouter.get("/watch-items", async (req, res) => {
   const items = await WatchItem.find(ownedByUser(req.userId!))
     .sort({ createdAt: -1 })
@@ -134,25 +180,42 @@ watchItemsRouter.post("/watch-items", async (req, res) => {
     emoji?: string;
     url?: string;
     pollIntervalSec?: number;
+    offers?: unknown;
   };
 
-  if (!body.title?.trim() || !body.retailer?.trim()) {
+  const { offers, error } = parseOffers(body.offers);
+  if (error) {
+    res.status(400).json({ error });
+    return;
+  }
+  if (typeof body.targetPrice !== "number") {
+    res.status(400).json({ error: "targetPrice must be a number" });
+    return;
+  }
+
+  // with offers the headline mirrors the cheapest one, so the client only has
+  // to send a retailer/price when it is a single-retailer row
+  const winner = offers ? bestOffer(offers) : null;
+  const retailer = winner ? winner.retailer : body.retailer?.trim();
+  const price = winner ? winner.price : body.price;
+  if (!body.title?.trim() || !retailer) {
     res.status(400).json({ error: "title and retailer are required" });
     return;
   }
-  if (typeof body.price !== "number" || typeof body.targetPrice !== "number") {
-    res.status(400).json({ error: "price and targetPrice must be numbers" });
+  if (typeof price !== "number") {
+    res.status(400).json({ error: "price must be a number" });
     return;
   }
 
   const item = await WatchItem.create({
     title: body.title.trim(),
-    retailer: body.retailer.trim(),
-    price: body.price,
+    retailer,
+    price,
     targetPrice: body.targetPrice,
     emoji: body.emoji,
-    url: body.url,
+    url: winner?.url ?? body.url,
     pollIntervalSec: body.pollIntervalSec,
+    offers,
     owner: req.userId,
   });
   res.status(201).json({ item });
@@ -167,7 +230,14 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
     deltaPct?: number;
     autoBuy?: boolean;
     pollIntervalSec?: number;
+    offers?: unknown;
   };
+
+  const { offers, error } = parseOffers(body.offers);
+  if (error) {
+    res.status(400).json({ error });
+    return;
+  }
 
   if (body.status && !STATUSES.includes(body.status as (typeof STATUSES)[number])) {
     res.status(400).json({ error: `status must be one of ${STATUSES.join(", ")}` });
@@ -208,6 +278,16 @@ watchItemsRouter.patch("/watch-items/:id", async (req, res) => {
   if (body.status) item.status = body.status as (typeof STATUSES)[number];
   if (body.autoBuy !== undefined) item.autoBuy = body.autoBuy;
   if (typeof body.pollIntervalSec === "number") item.pollIntervalSec = body.pollIntervalSec;
+  if (offers) {
+    // replacing the offers re-picks the headline the same way POST does
+    const winner = bestOffer(offers);
+    item.offers = offers as typeof item.offers;
+    if (winner) {
+      item.retailer = winner.retailer;
+      item.price = winner.price;
+      if (winner.url) item.url = winner.url;
+    }
+  }
   item.lastCheckedAt = new Date();
   await item.save();
   res.json({ item });

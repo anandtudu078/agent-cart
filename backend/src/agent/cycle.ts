@@ -9,7 +9,7 @@ import {
 } from "../models/index.js";
 import { env } from "../config/env.js";
 import { fetchPriceUpdates } from "./service.js";
-import { fetchLivePrice } from "./fetch-price.js";
+import { fetchLivePrice, type PriceFetch } from "./fetch-price.js";
 import { sendDropAlert } from "./webhook.js";
 
 export interface CycleSummary {
@@ -82,6 +82,26 @@ function targetGap(price: number, target: number): string {
   return `still $${(price - target).toFixed(2)} above target`;
 }
 
+export interface OfferLike {
+  retailer: string;
+  url?: string | null;
+  price: number;
+}
+
+/**
+ * The offer a multi-retailer row is judged on: the cheapest one with a
+ * usable price. Returns null when every offer is unusable — never invent a
+ * winner out of zero candidates.
+ */
+export function bestOffer(offers: readonly OfferLike[]): OfferLike | null {
+  let best: OfferLike | null = null;
+  for (const offer of offers) {
+    if (!Number.isFinite(offer.price) || offer.price <= 0) continue;
+    if (best === null || offer.price < best.price) best = offer;
+  }
+  return best;
+}
+
 /**
  * True when an item is due for its next scan as of `now`.
  * Never-checked items are due immediately; otherwise
@@ -135,37 +155,137 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
     }
 
     // smart prices from the Python agent service; null → local jitter below
-    const service = await fetchPriceUpdates(
-      items.map((item) => ({
-        id: item.id,
-        title: item.title,
-        retailer: item.retailer,
-        price: item.price,
-        targetPrice: item.targetPrice,
-      })),
-    );
+    // multi-retailer rows are priced by comparison, not by the agent — only
+    // ask about the single-retailer ones, and skip the round trip entirely
+    // when there are none left
+    const solo = items.filter((item) => (item.offers ?? []).length === 0);
+    const service =
+      solo.length > 0
+        ? await fetchPriceUpdates(
+            solo.map((item) => ({
+              id: item.id,
+              title: item.title,
+              retailer: item.retailer,
+              price: item.price,
+              targetPrice: item.targetPrice,
+            })),
+          )
+        : null;
 
     // live fetches run together — one slow retailer must not serialize the
     // whole cycle (shortcut: unbounded fan-out; add a pool past ~50 items)
-    const fetched = await Promise.all(
-      items.map((item) =>
-        item.url ? fetchLivePrice(item.url, item.price) : Promise.resolve(null),
-      ),
+    const fetched: (PriceFetch | null)[][] = await Promise.all(
+      items.map((item) => {
+        const offers = item.offers ?? [];
+        // multi-retailer rows poll every offer url — one slot per offer so the
+        // results stay index-aligned with `item.offers`
+        if (offers.length > 0) {
+          return Promise.all(
+            offers.map((offer) =>
+              offer.url ? fetchLivePrice(offer.url, offer.price) : Promise.resolve(null),
+            ),
+          );
+        }
+        return item.url
+          ? fetchLivePrice(item.url, item.price).then((result) => [result])
+          : Promise.resolve([]);
+      }),
     );
 
     let drops = 0;
     let liveOk = 0;
     let liveFailed = 0;
+    let agentUsed = 0;
     const points: PricePointDoc[] = [];
 
     for (const [index, item] of items.entries()) {
       const oldPrice = item.price;
+      const previousRetailer = item.retailer;
       const observedAt = new Date();
-      const live = fetched[index] ?? null;
+      const results = fetched[index] ?? [];
+      const offers = item.offers ?? [];
+      const live = offers.length > 0 ? null : (results[0] ?? null);
       let nextPrice = oldPrice;
       let source: "live" | "agent-service" | "simulated" = "simulated";
 
-      if (item.url) {
+      if (offers.length > 0) {
+        // multi-retailer: poll every offer, then judge the row on the cheapest
+        // one. A failed offer fetch keeps that offer's last real price, so a
+        // dead retailer can never make an item look cheaper than it is.
+        let anyLive = false;
+        let anyUrl = false;
+        for (const [position, offer] of offers.entries()) {
+          if (!offer.url) {
+            // no url → the same simulated walk a single-retailer row gets
+            offer.price = jittered(offer.price);
+            offer.fetchStatus = "simulated";
+            offer.lastFetchError = undefined;
+            continue;
+          }
+          anyUrl = true;
+          const result = results[position] ?? null;
+          if (result === null || result.ok === false) {
+            const reason = result === null ? "no fetch attempted" : result.error;
+            offer.fetchStatus = offer.fetchedAt ? "stale" : "error";
+            offer.lastFetchError = reason.slice(0, 200);
+            continue;
+          }
+          anyLive = true;
+          offer.price = result.price;
+          offer.fetchStatus = "ok";
+          offer.lastFetchError = undefined;
+          offer.fetchedAt = observedAt;
+        }
+
+        const best = bestOffer(offers);
+        if (best === null) {
+          liveFailed += 1;
+          item.fetchStatus = item.fetchedAt ? "stale" : "error";
+          item.lastFetchError = "no offer returned a usable price";
+          item.lastCheckedAt = observedAt;
+          await item.save();
+          await log(
+            "warn",
+            `no usable offer: ${item.title} (${offers.length} retailers)`,
+            false,
+            item.owner,
+          );
+          continue;
+        }
+
+        nextPrice = best.price;
+        source = anyLive ? "live" : "simulated";
+        // headline mirrors the winner — cart, webhook and the chart read these
+        item.retailer = best.retailer;
+        if (best.url) item.url = best.url;
+        item.fetchStatus = anyLive
+          ? "ok"
+          : anyUrl
+            ? item.fetchedAt
+              ? "stale"
+              : "error"
+            : "simulated";
+        item.lastFetchError =
+          anyLive || !anyUrl ? undefined : "every offer fetch failed";
+        if (anyLive) {
+          liveOk += 1;
+          item.fetchedAt = observedAt;
+        } else if (anyUrl) {
+          liveFailed += 1;
+        }
+
+        if (best.retailer !== previousRetailer) {
+          await HistoryEntry.create({
+            item: item._id,
+            itemTitle: item.title,
+            action: "Cheapest offer changed",
+            detail: `${previousRetailer} → ${best.retailer} at $${nextPrice.toFixed(2)} (cheapest of ${offers.length} offers)`,
+            kind: "info",
+            price: nextPrice,
+            owner: item.owner,
+          });
+        }
+      } else if (item.url) {
         // a failed fetch keeps the last real price untouched: better a stale
         // row marked stale than a fabricated one
         if (live === null || live.ok === false) {
@@ -197,6 +317,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         if (suggested !== undefined) {
           nextPrice = suggested;
           source = "agent-service";
+          agentUsed += 1;
         } else {
           nextPrice = jittered(oldPrice);
         }
@@ -227,7 +348,9 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         item: item._id,
         itemTitle: item.title,
         action: "Target re-checked",
-        detail: `$${nextPrice.toFixed(2)} at ${item.retailer} — ${targetGap(nextPrice, item.targetPrice)}`,
+        detail: `$${nextPrice.toFixed(2)} at ${item.retailer}${
+          offers.length > 1 ? ` (cheapest of ${offers.length} offers)` : ""
+        } — ${targetGap(nextPrice, item.targetPrice)}`,
         kind: "scan",
         price: nextPrice,
         owner: item.owner,
@@ -325,11 +448,11 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
               : ""
           }${
             service
-              ? ` · agent-service for the rest (${service.updates.size} items)`
+              ? ` · agent-service for the rest (${agentUsed} items)`
               : ""
           }`
         : service
-          ? `price source: agent-service (${service.source}, ${service.updates.size}/${items.length} items)`
+          ? `price source: agent-service (${service.source}, ${agentUsed}/${items.length} items)`
           : "price source: local jitter (agent service unreachable)",
     );
     await log(

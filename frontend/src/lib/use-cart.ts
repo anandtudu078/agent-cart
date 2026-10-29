@@ -13,6 +13,13 @@ export interface CartEntry {
   couponCode?: string | null;
   couponDiscount?: number;
   paypalOrderId?: string | null;
+  /** Nano settle leg — present once a quote has been requested. */
+  nanoAddress?: string | null;
+  nanoQuotedXno?: string | null;
+  nanoAmountRaw?: string | null;
+  nanoRate?: number | null;
+  nanoQuoteExpiresAt?: string | null;
+  nanoBlockHash?: string | null;
 }
 
 interface RawEntry {
@@ -26,6 +33,12 @@ interface RawEntry {
   couponDiscount?: number;
   status: "reserved" | "checked_out";
   paypalOrderId?: string;
+  nanoAddress?: string;
+  nanoQuotedXno?: string;
+  nanoAmountRaw?: string;
+  nanoRate?: number;
+  nanoQuoteExpiresAt?: string;
+  nanoBlockHash?: string;
 }
 
 function mapEntry(raw: RawEntry): CartEntry {
@@ -39,6 +52,12 @@ function mapEntry(raw: RawEntry): CartEntry {
     couponCode: raw.couponCode,
     couponDiscount: raw.couponDiscount ?? 0,
     paypalOrderId: raw.paypalOrderId,
+    nanoAddress: raw.nanoAddress,
+    nanoQuotedXno: raw.nanoQuotedXno,
+    nanoAmountRaw: raw.nanoAmountRaw,
+    nanoRate: raw.nanoRate,
+    nanoQuoteExpiresAt: raw.nanoQuoteExpiresAt,
+    nanoBlockHash: raw.nanoBlockHash,
   };
 }
 
@@ -221,6 +240,54 @@ export function useCart() {
     [refresh],
   );
 
+  /** Freeze the XNO amount for a reserved entry; error or null. */
+  const nanoQuote = useCallback(
+    async (id: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cart/${id}/nano-quote`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "Could not quote the Nano amount";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
+  /** Verify the buyer's send block on the ledger; error or null. */
+  const nanoVerify = useCallback(
+    async (id: string, blockHash: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cart/${id}/nano-verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ blockHash }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "Could not verify the payment";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
   return {
     entries,
     subtotal,
@@ -234,5 +301,7 @@ export function useCart() {
     removeCoupon,
     checkout,
     capture,
+    nanoQuote,
+    nanoVerify,
   };
 }

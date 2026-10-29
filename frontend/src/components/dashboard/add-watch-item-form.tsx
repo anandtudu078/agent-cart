@@ -9,6 +9,15 @@ interface Props {
   onAdd: (input: NewWatchItem) => Promise<string | null>;
 }
 
+// matches MAX_OFFERS on the API — one product, at most this many retailers
+const MAX_RETAILERS = 5;
+
+interface ExtraRetailer {
+  retailer: string;
+  price: string;
+  url: string;
+}
+
 /** Collapsible "+ New watch" form above the watchlist table. */
 export function AddWatchItemForm({ onAdd }: Props) {
   const [open, setOpen] = useState(false);
@@ -17,6 +26,9 @@ export function AddWatchItemForm({ onAdd }: Props) {
   const [price, setPrice] = useState("");
   const [target, setTarget] = useState("");
   const [url, setUrl] = useState("");
+  // extra retailers beyond the primary one above; non-empty → the item is
+  // sent as a comparison and priced off the cheapest offer
+  const [extra, setExtra] = useState<ExtraRetailer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -63,12 +75,33 @@ export function AddWatchItemForm({ onAdd }: Props) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    const filled = extra.filter((row) => row.retailer.trim() || row.price.trim());
+    if (filled.some((row) => !row.retailer.trim() || row.price.trim() === "")) {
+      setBusy(false);
+      setError("every retailer needs a name and a price");
+      return;
+    }
     const err = await onAdd({
       title: title.trim(),
       retailer: retailer.trim(),
       price: Number(price),
       targetPrice: Number(target),
       url: url.trim() || undefined,
+      offers:
+        filled.length > 0
+          ? [
+              {
+                retailer: retailer.trim(),
+                price: Number(price),
+                url: url.trim() || undefined,
+              },
+              ...filled.map((row) => ({
+                retailer: row.retailer.trim(),
+                price: Number(row.price),
+                url: row.url.trim() || undefined,
+              })),
+            ]
+          : undefined,
     });
     setBusy(false);
     if (err) {
@@ -80,6 +113,7 @@ export function AddWatchItemForm({ onAdd }: Props) {
     setPrice("");
     setTarget("");
     setUrl("");
+    setExtra([]);
     setOpen(false);
   }
 
@@ -169,6 +203,82 @@ export function AddWatchItemForm({ onAdd }: Props) {
         </button>
         </span>
       </label>
+      <div className="w-full border-t border-panel-border pt-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] uppercase tracking-wider text-muted">
+            Other retailers — the cheapest offer wins
+          </p>
+          <button
+            type="button"
+            disabled={1 + extra.length >= MAX_RETAILERS}
+            onClick={() =>
+              setExtra((rows) => [...rows, { retailer: "", price: "", url: "" }])
+            }
+            className="flex items-center gap-1 rounded-md border border-panel-border px-2 py-1 text-[11px] text-zinc-300 transition-colors hover:border-cyan-500/40 hover:text-white disabled:opacity-50"
+          >
+            <Plus className="h-3 w-3" aria-hidden />
+            Add retailer
+          </button>
+        </div>
+        {extra.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {extra.map((row, index) => (
+              <div key={index} className="flex gap-2">
+                <input
+                  required
+                  value={row.retailer}
+                  onChange={(e) =>
+                    setExtra((rows) =>
+                      rows.map((r, i) =>
+                        i === index ? { ...r, retailer: e.target.value } : r,
+                      ),
+                    )
+                  }
+                  className="min-w-32 flex-1 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+                  placeholder="BestBuy"
+                />
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={row.price}
+                  onChange={(e) =>
+                    setExtra((rows) =>
+                      rows.map((r, i) =>
+                        i === index ? { ...r, price: e.target.value } : r,
+                      ),
+                    )
+                  }
+                  className="w-28 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+                  placeholder="319.00"
+                />
+                <input
+                  type="url"
+                  value={row.url}
+                  onChange={(e) =>
+                    setExtra((rows) =>
+                      rows.map((r, i) =>
+                        i === index ? { ...r, url: e.target.value } : r,
+                      ),
+                    )
+                  }
+                  className="min-w-40 flex-[2] rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+                  placeholder="https://www.bestbuy.com/… (optional)"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove ${row.retailer || "retailer"}`}
+                  onClick={() => setExtra((rows) => rows.filter((_, i) => i !== index))}
+                  className="rounded-md border border-panel-border px-2.5 text-muted transition-colors hover:border-red-500/40 hover:text-red-400"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="flex items-center gap-2">
         <button
           type="submit"

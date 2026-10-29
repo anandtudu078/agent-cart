@@ -1,10 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  fetchLivePrice,
   parseAmount,
   priceFromJsonLd,
   priceFromMeta,
   retailerFromUrl,
+  stockFromJsonLd,
+  stockFromMeta,
   titleFromJsonLd,
   titleFromMeta,
 } from "./fetch-price.js";
@@ -66,6 +69,60 @@ test("retailerFromUrl maps known hosts and falls back to the label", () => {
   assert.equal(retailerFromUrl("https://www.target.com/p/x"), "Target");
   assert.equal(retailerFromUrl("https://shop.example.co.uk/item"), "Shop");
   assert.equal(retailerFromUrl("not-a-url"), "");
+});
+
+test("stockFromJsonLd reads offer availability, else nothing", () => {
+  assert.equal(
+    stockFromJsonLd({
+      "@type": "Product",
+      offers: { "@type": "Offer", price: 999, availability: "https://schema.org/OutOfStock" },
+    }),
+    false,
+  );
+  assert.equal(
+    stockFromJsonLd({ "@type": "Offer", price: 10, availability: "InStock" }),
+    true,
+  );
+  // preorder and limited stock are still buyable
+  assert.equal(
+    stockFromJsonLd({ "@type": "Offer", availability: "PreOrder" }),
+    true,
+  );
+  assert.equal(stockFromJsonLd({ "@type": "Product", offers: { price: 5 } }), null);
+  // not a product/offer node — its availability says nothing
+  assert.equal(stockFromJsonLd({ "@type": "Article", availability: "InStock" }), null);
+  assert.equal(stockFromJsonLd("junk"), null);
+});
+
+test("stockFromMeta reads availability meta and link tags", () => {
+  assert.equal(
+    stockFromMeta('<meta property="product:availability" content="OutOfStock" />'),
+    false,
+  );
+  assert.equal(
+    stockFromMeta('<link itemprop="availability" href="https://schema.org/InStock">'),
+    true,
+  );
+  assert.equal(stockFromMeta("<p>nothing here</p>"), null);
+  // a value schema.org doesn't define stays unknown rather than guessed
+  assert.equal(stockFromMeta('<meta name="availability" content="Backorder">'), null);
+});
+
+test("fetchLivePrice returns the stock verdict next to the price", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      `<script type="application/ld+json">
+        {"@type":"Product","offers":{"@type":"Offer","price":"199.00","availability":"https://schema.org/OutOfStock"}}
+      </script>`,
+      { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } },
+    )) as typeof fetch;
+  try {
+    const result = await fetchLivePrice("https://www.bestbuy.com/site/tv", 199);
+    assert.deepEqual(result, { ok: true, price: 199, inStock: false });
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("isPublicHttpUrl rejects internal and non-http targets", () => {

@@ -161,6 +161,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
     for (const [index, item] of items.entries()) {
       const oldPrice = item.price;
       const observedAt = new Date();
+      // what we believed before this fetch — used to announce a sell-out once
+      const wasInStock = item.inStock !== false;
       const live = fetched[index] ?? null;
       let nextPrice = oldPrice;
       let source: "live" | "agent-service" | "simulated" = "simulated";
@@ -189,6 +191,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         item.fetchStatus = "ok";
         item.lastFetchError = undefined;
         item.fetchedAt = observedAt;
+        // a page that says nothing keeps the previous belief
+        if (live.inStock !== null) item.inStock = live.inStock;
       } else {
         // no url → agent service, then the built-in jitter
         item.fetchStatus = "simulated";
@@ -214,7 +218,23 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
       item.lastCheckedAt = observedAt;
       await item.save();
 
-      // one honest observation per item per cycle — the chart reads these
+      if (wasInStock && item.inStock === false) {
+        await HistoryEntry.create({
+          item: item._id,
+          itemTitle: item.title,
+          action: "Out of stock",
+          detail: `${item.retailer} reports it sold out — auto-buy is held off until it is back`,
+          kind: "alert",
+          price: nextPrice,
+          owner: item.owner,
+        });
+        await log(
+          "warn",
+          `out of stock: ${item.title} at ${item.retailer} — auto-buy held off`,
+          false,
+          item.owner,
+        );
+      }
       points.push({
         item: item._id,
         price: nextPrice,
@@ -264,7 +284,23 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           currency: item.currency,
           autoBuy: item.autoBuy,
         });
-        if (item.autoBuy) {
+        if (item.autoBuy && item.inStock === false) {
+          await HistoryEntry.create({
+            item: item._id,
+            itemTitle: item.title,
+            action: "Auto-buy skipped",
+            detail: `Target hit at $${nextPrice.toFixed(2)} but ${item.retailer} has it out of stock — nothing reserved`,
+            kind: "alert",
+            price: nextPrice,
+            owner: item.owner,
+          });
+          await log(
+            "warn",
+            `auto-buy skipped: ${item.title} is out of stock at ${item.retailer}`,
+            false,
+            item.owner,
+          );
+        } else if (item.autoBuy) {
           const held = await CartEntry.findOne({
             watchItem: item._id,
             status: "reserved",

@@ -37,6 +37,10 @@ export const watchItemSchema = new Schema(
     },
     lastFetchError: { type: String, maxlength: 200 },
     fetchedAt: { type: Date },
+    // last live verdict on availability: false = the page reported it sold
+    // out. Stays as-is on a failed fetch (we learned nothing), so `true`
+    // means "last time we could tell, it was buyable" — not a guarantee.
+    inStock: { type: Boolean, default: true },
     // optional so seeded demo rows stay shared; null = visible to any signed-in user
     owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
   },

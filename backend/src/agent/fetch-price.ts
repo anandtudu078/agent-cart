@@ -27,7 +27,12 @@ const LD_JSON =
 const ATTR = /([a-z:-]+)=["']([^"']*)["']/gi;
 
 export type PriceFetch =
-  | { ok: true; price: number }
+  | {
+      ok: true;
+      price: number;
+      /** true = buyable, false = sold out, null = page declared nothing. */
+      inStock: boolean | null;
+    }
   | { ok: false; error: string };
 
 /** Turn a human price string ("$1,299.00") into a number, or null. */
@@ -117,6 +122,73 @@ export function priceFromMeta(html: string): number | null {
   return null;
 }
 
+/** schema.org availability value → buyable?, or null when unrecognized. */
+function stockFromValue(raw: unknown): boolean | null {
+  if (typeof raw !== "string") return null;
+  const value = raw
+    .toLowerCase()
+    .replace(/^https?:\/\/schema\.org\//, "")
+    .replace(/[^a-z]/g, "");
+  if (["outofstock", "soldout", "discontinued"].includes(value)) return false;
+  if (
+    [
+      "instock",
+      "preorder",
+      "presale",
+      "limitedavailability",
+      "onlineonly",
+      "instoreonly",
+    ].includes(value)
+  ) {
+    return true;
+  }
+  return null;
+}
+
+/**
+ * Availability from a JSON-LD tree: Offer.availability, else the node's own.
+ * Structured data only — same reason as the price: "sold out" in one block
+ * of page copy says nothing about the buy button in another.
+ */
+export function stockFromJsonLd(parsed: unknown): boolean | null {
+  for (const node of walk(parsed)) {
+    if (!isProductLike(node)) continue;
+    const offers = Array.isArray(node.offers) ? node.offers : [node.offers];
+    for (const offer of offers) {
+      if (offer === null || typeof offer !== "object") continue;
+      const verdict = stockFromValue(
+        (offer as Record<string, unknown>).availability,
+      );
+      if (verdict !== null) return verdict;
+    }
+    // the node itself may be the Offer
+    const own = stockFromValue(node.availability);
+    if (own !== null) return own;
+  }
+  return null;
+}
+
+/**
+ * Availability from meta/link tags: `<meta property="product:availability"
+ * content="…">` and `<link itemprop="availability" href="…">`.
+ */
+export function stockFromMeta(html: string): boolean | null {
+  const wanted = new Set(["availability", "og:availability", "product:availability"]);
+  for (const match of html.match(/<(?:meta|link)\b[^>]*>/gi) ?? []) {
+    const attrs = new Map<string, string>();
+    ATTR.lastIndex = 0;
+    for (const attr of match.matchAll(ATTR)) {
+      attrs.set((attr[1] ?? "").toLowerCase(), attr[2] ?? "");
+    }
+    const key = (attrs.get("property") ?? attrs.get("name") ?? attrs.get("itemprop") ?? "")
+      .toLowerCase();
+    if (!wanted.has(key)) continue;
+    const verdict = stockFromValue(attrs.get("content") ?? attrs.get("href"));
+    if (verdict !== null) return verdict;
+  }
+  return null;
+}
+
 /**
  * One live price fetch. Fails closed: a blocked request, an unparsable
  * page, or a number that doesn't look like the current price all come back
@@ -162,16 +234,20 @@ export async function fetchLivePrice(
   const html = page.html;
 
   let price: number | null = null;
+  let inStock: boolean | null = null;
   LD_JSON.lastIndex = 0;
   for (const block of html.matchAll(LD_JSON)) {
     try {
-      price = priceFromJsonLd(JSON.parse((block[1] ?? "").trim()));
+      const parsed = JSON.parse((block[1] ?? "").trim());
+      price ??= priceFromJsonLd(parsed);
+      inStock ??= stockFromJsonLd(parsed);
     } catch {
       continue; // one malformed ld+json block shouldn't sink the page
     }
-    if (price !== null) break;
+    if (price !== null && inStock !== null) break;
   }
   price ??= priceFromMeta(html);
+  inStock ??= stockFromMeta(html);
 
   if (price === null) return { ok: false, error: "no price found in page" };
   if (price < 0.01 || price > 1_000_000) {
@@ -186,7 +262,7 @@ export async function fetchLivePrice(
       error: `price moved ${Math.round(((price - currentPrice) / currentPrice) * 100)}% — treating as a parse error`,
     };
   }
-  return { ok: true, price };
+  return { ok: true, price, inStock };
 }
 
 /** What we could read off a product page, for the add-by-URL form. */

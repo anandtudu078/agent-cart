@@ -28,6 +28,7 @@ Built today:
 | Live prices | ✅ scan cycle fetches the product URL (JSON-LD / price meta) and marks each row `ok · stale · error · simulated` — a failed fetch keeps the last real price instead of inventing one |
 | Price history | ✅ `price_points` collection written once per observed price (90-day TTL) → `GET /api/watch-items/:id/series` feeds the chart |
 | Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
+| Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
 
@@ -110,9 +111,9 @@ returns 401.
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
 - `GET /api/watch-items` — full watchlist, newest first
-- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle
+- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?, offers?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle. `offers` is an optional array of `{retailer, price, url?}` (max 5) for the same product: the agent polls every offer and the headline `retailer`/`price`/`url` always mirror the cheapest one, so the chart, cart and webhook need no extra input
 - `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
-- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, or `pollIntervalSec`
+- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, `pollIntervalSec`, or replace `offers` (which re-picks the cheapest headline)
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
@@ -134,7 +135,7 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 ## Data model
 
-- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`
+- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`. `offers[]` holds the other retailers for the same product (`retailer`, `url`, `price` with its own fetch outcome); the headline fields above are re-pointed at the cheapest offer every cycle — empty `offers` = the classic single-retailer row
 - **price_points** — one row per observed price (`item`, `price`, `at`, `source live | agent-service | simulated`), auto-expire after 90 days; the chart reads these
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days

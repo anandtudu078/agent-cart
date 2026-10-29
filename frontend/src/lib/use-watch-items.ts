@@ -8,10 +8,20 @@ export type WatchStatus = "watching" | "drop" | "paused";
 /** Where the last price came from: live fetch, or why it wasn't. */
 export type FetchStatus = "ok" | "stale" | "error" | "simulated";
 
+/** One retailer's offer for a watched product. */
+export interface OfferInfo {
+  retailer: string;
+  price: number;
+  url?: string;
+  fetchStatus: FetchStatus;
+}
+
 export interface WatchedItem {
   id: string;
   title: string;
   retailer: string;
+  /** Other retailers for the same product; empty = single-retailer row. */
+  offers: OfferInfo[];
   emoji: string;
   price: number;
   target: number;
@@ -27,6 +37,12 @@ interface RawItem {
   _id: string;
   title: string;
   retailer: string;
+  offers?: {
+    retailer: string;
+    price: number;
+    url?: string;
+    fetchStatus?: FetchStatus;
+  }[];
   emoji?: string;
   price: number;
   targetPrice: number;
@@ -58,6 +74,11 @@ export interface NewWatchItem {
   targetPrice: number;
   /** Product page — when set, the agent fetches the live price from it. */
   url?: string;
+  /**
+   * Every retailer selling this product, primary first. When set the row is
+   * priced by comparison — the cheapest offer becomes the headline.
+   */
+  offers?: { retailer: string; price: number; url?: string }[];
 }
 
 /** Live watchlist from GET /api/watch-items, with add/remove mutations. */
@@ -74,6 +95,12 @@ export function useWatchItems() {
             id: item._id,
             title: item.title,
             retailer: item.retailer,
+            offers: (item.offers ?? []).map((offer) => ({
+              retailer: offer.retailer,
+              price: offer.price,
+              url: offer.url,
+              fetchStatus: offer.fetchStatus ?? "simulated",
+            })),
             emoji: item.emoji ?? "🛍️",
             price: item.price,
             target: item.targetPrice,

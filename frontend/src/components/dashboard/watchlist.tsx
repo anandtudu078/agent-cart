@@ -10,7 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/use-cart";
-import { useWatchItems, type FetchStatus } from "@/lib/use-watch-items";
+import { useWatchItems, type FetchStatus, type Trend } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { PriceChart } from "./price-chart";
 import { formatPrice, useSettings } from "@/lib/use-settings";
@@ -49,6 +49,37 @@ function FetchChip({
       className={`rounded-full border px-2 py-0.5 text-[11px] ${chip.className}`}
     >
       {chip.label}
+    </span>
+  );
+}
+
+/** Buy-now-or-wait badge from the item's own price history. */
+function TrendChip({ trend }: { trend: Trend }) {
+  if (trend.verdict === "insufficient") return null;
+  const view = {
+    falling: {
+      label: "▼ falling",
+      className: "border-emerald-500/40 text-emerald-400",
+      hint: (p: number) => `Down ${Math.abs(p).toFixed(1)}% over its observed history — prices are easing`,
+    },
+    rising: {
+      label: "▲ rising",
+      className: "border-red-500/40 text-red-400",
+      hint: (p: number) => `Up ${p.toFixed(1)}% over its observed history — waiting may cost more`,
+    },
+    flat: {
+      label: "→ flat",
+      className: "border-panel-border text-muted",
+      hint: () => "Price has held steady across its observed history",
+    },
+  } as const;
+  const { label, className, hint } = view[trend.verdict];
+  return (
+    <span
+      title={hint(trend.changePct)}
+      className={`rounded-full border px-2 py-0.5 text-[11px] ${className}`}
+    >
+      {label}
     </span>
   );
 }
@@ -157,6 +188,7 @@ export function Watchlist() {
                   {item.status}
                 </span>
                 <FetchChip status={item.fetchStatus} error={item.lastFetchError} />
+                <TrendChip trend={item.trend} />
                 </span>
               </td>
               <td className="px-4 py-3 text-right font-mono text-[11px] text-muted">

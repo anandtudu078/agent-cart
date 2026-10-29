@@ -53,6 +53,19 @@ function FetchChip({
   );
 }
 
+/** Sold-out badge — only shown when a live fetch actually said so. */
+function StockChip({ inStock }: { inStock: boolean }) {
+  if (inStock) return null;
+  return (
+    <span
+      title="The product page reported this item out of stock — auto-buy stays off until it is back"
+      className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[11px] text-amber-400"
+    >
+      sold out
+    </span>
+  );
+}
+
 /** Buy-now-or-wait badge from the item's own price history. */
 function TrendChip({ trend }: { trend: Trend }) {
   if (trend.verdict === "insufficient") return null;
@@ -188,6 +201,7 @@ export function Watchlist() {
                   {item.status}
                 </span>
                 <FetchChip status={item.fetchStatus} error={item.lastFetchError} />
+                <StockChip inStock={item.inStock} />
                 <TrendChip trend={item.trend} />
                 </span>
               </td>

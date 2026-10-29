@@ -39,6 +39,8 @@ export interface WatchedItem {
   autoBuy: boolean;
   fetchStatus: FetchStatus;
   lastFetchError?: string;
+  /** false = the last live fetch reported the item sold out. */
+  inStock: boolean;
   trend: Trend;
   updated: string;
 }
@@ -61,6 +63,7 @@ interface RawItem {
   autoBuy?: boolean;
   fetchStatus?: FetchStatus;
   lastFetchError?: string;
+  inStock?: boolean;
   trend?: Trend;
   lastCheckedAt?: string;
   createdAt?: string;
@@ -120,6 +123,7 @@ export function useWatchItems() {
             autoBuy: item.autoBuy ?? false,
             fetchStatus: item.fetchStatus ?? "simulated",
             lastFetchError: item.lastFetchError,
+            inStock: item.inStock ?? true,
             trend: item.trend ?? { verdict: "insufficient", changePct: 0 },
             updated: timeAgo(item.lastCheckedAt ?? item.createdAt),
           })),

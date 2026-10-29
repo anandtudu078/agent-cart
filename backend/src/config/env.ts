@@ -53,5 +53,13 @@ export const env = {
     clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
   },
   agentServiceUrl: process.env.AGENT_SERVICE_URL ?? "http://localhost:8000",
+  // Nano (XNO) settle leg — address is the seller's receive address; the
+  // leg stays disabled (501) until it is set, like the PayPal routes
+  nano: {
+    address: process.env.NANO_ADDRESS ?? "",
+    rpcUrl: process.env.NANO_RPC_URL ?? "https://nanorpc.cc",
+    // rate used when the live price feed is unreachable
+    rateFallback: Number(process.env.XNO_USD_RATE ?? 0),
+  },
   jwt: { secret: jwtSecret() },
 } as const;

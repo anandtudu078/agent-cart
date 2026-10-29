@@ -25,6 +25,17 @@ export const cartEntrySchema = new Schema(
       index: true,
     },
     paypalOrderId: { type: String },
+    // Nano settle leg — the quote is frozen when requested and the entry only
+    // flips to checked_out once verifySendBlock() confirms a settled send.
+    // raw amounts are uint128 decimal strings: BSON has no bigint.
+    nanoQuotedXno: { type: String },
+    nanoAmountRaw: { type: String },
+    nanoRate: { type: Number },
+    nanoQuoteExpiresAt: { type: Date },
+    nanoBlockHash: { type: String },
+    // denormalized from NANO_ADDRESS at quote time so the cart can render the
+    // payment panel without asking the API for config again
+    nanoAddress: { type: String },
     // coupon applied at checkout — discount frozen at apply time (prices are
     // frozen when the item is reserved)
     couponCode: { type: String, trim: true, uppercase: true },

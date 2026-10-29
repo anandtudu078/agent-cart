@@ -21,6 +21,28 @@ export const watchItemSchema = new Schema(
       index: true,
     },
     pollIntervalSec: { type: Number, default: 30, min: 5 },
+    // other retailers selling the same product. Each offer is polled on its
+    // own url and the headline `retailer` / `price` / `url` always mirror the
+    // cheapest one, so the chart, cart and webhook need no new code.
+    // empty (or absent) = the classic single-retailer row.
+    offers: {
+      // default keeps rows written before this field existed reading as []
+      default: [],
+      type: [
+        {
+          retailer: { type: String, required: true, trim: true },
+          url: { type: String, trim: true },
+          price: { type: Number, required: true, min: 0 },
+          fetchStatus: {
+            type: String,
+            enum: ["ok", "stale", "error", "simulated"],
+            default: "simulated",
+          },
+          lastFetchError: { type: String, maxlength: 200 },
+          fetchedAt: { type: Date },
+        },
+      ],
+    },
     // when a scan drops price to target, pull it into the cart automatically
     autoBuy: { type: Boolean, default: false, index: true },
     lastCheckedAt: { type: Date },

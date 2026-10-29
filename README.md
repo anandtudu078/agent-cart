@@ -28,6 +28,8 @@ Built today:
 | Live prices | ✅ scan cycle fetches the product URL (JSON-LD / price meta) and marks each row `ok · stale · error · simulated` — a failed fetch keeps the last real price instead of inventing one |
 | Price history | ✅ `price_points` collection written once per observed price (90-day TTL) → `GET /api/watch-items/:id/series` feeds the chart |
 | Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
+| Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
+| Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
 
@@ -96,6 +98,9 @@ npm run dev             # dashboard on http://localhost:3000
 | `CORS_ORIGINS` | `http://localhost:3000` | comma-separated |
 | `MONGODB_URI` | local `mongodb://127.0.0.1:27017/agentcart` | Atlas `mongodb+srv://…` or standard string |
 | `PAYPAL_MODE` / `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | — | sandbox by default |
+| `NANO_ADDRESS` | — | seller's `nano_…` receive address; empty disables the Nano settle leg (its routes answer 501) |
+| `NANO_RPC_URL` | `https://nanorpc.cc` | public ledger node used to read send blocks — no key needed |
+| `XNO_USD_RATE` | — | rate used when the CoinGecko price feed is unreachable |
 | `AGENT_SERVICE_URL` | `http://localhost:8000` | Python agent service; scan cycles fall back to local jitter when unreachable |
 | `AGENT_INTERVAL_SEC` | `30` | seconds between scan cycles (min 5) |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | frontend → backend base URL |
@@ -109,10 +114,10 @@ returns 401.
 - `GET /api/health` — liveness + database state
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
-- `GET /api/watch-items` — full watchlist, newest first
-- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle
+- `GET /api/watch-items` — full watchlist, newest first; each row carries a `trend` verdict (`rising | falling | flat | insufficient`) computed from its own price history — the buy-now-or-wait signal behind the badge in the Status column
+- `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?, offers?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle. `offers` is an optional array of `{retailer, price, url?}` (max 5) for the same product: the agent polls every offer and the headline `retailer`/`price`/`url` always mirror the cheapest one, so the chart, cart and webhook need no extra input
 - `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
-- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, or `pollIntervalSec`
+- `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, `pollIntervalSec`, or replace `offers` (which re-picks the cheapest headline)
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
@@ -124,6 +129,8 @@ returns 401.
 - `DELETE /api/cart/:id` — release a reserved item
 - `POST /api/cart/:id/checkout` — create a PayPal order, returns `{orderId, approvalUrl}` (501 when PayPal creds are unset)
 - `POST /api/cart/:id/capture` — capture an approved PayPal order
+- `POST /api/cart/:id/nano-quote` — freeze the XNO amount for a reserved entry: returns `{address, amountXno, amountRaw, rate, totalUsd, expiresAt}`, quoted at the live rate (CoinGecko, 60s cache, `XNO_USD_RATE` fallback) and floored to 8 decimals so the amount displayed is the amount demanded. 501 without `NANO_ADDRESS`, 409 for a non-USD total, 400 when the total floors to zero units
+- `POST /api/cart/:id/nano-verify` — `{blockHash}` → the agent reads the block from `NANO_RPC_URL` and checks subtype `send`, destination = `NANO_ADDRESS`, amount ≥ quote, and cemented. 422 when the block is real but not our payment, 409 when the quote is missing or expired. On success the entry flips to `checked_out` — no keys and no wallet ever touch this app, the buyer signs in their own wallet
 - `GET /api/history` — recent agent decisions, newest first (`?limit=1..100`, `?kind=buy|alert|scan|info`, `?item=<watchItemId>`)
 - `POST /api/history` — record a decision `{itemTitle, action, detail, kind}`
 
@@ -134,11 +141,11 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 ## Data model
 
-- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`, and the last availability verdict `inStock` — `false` when the page reported it sold out, which holds off `autoBuy` until it is back
+- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`, and the last availability verdict `inStock` — `false` when the page reported it sold out, which holds off `autoBuy` until it is back. `offers[]` holds the other retailers for the same product (`retailer`, `url`, `price` with its own fetch outcome); the headline fields above are re-pointed at the cheapest offer every cycle — empty `offers` = the classic single-retailer row
 - **price_points** — one row per observed price (`item`, `price`, `at`, `source live | agent-service | simulated`), auto-expire after 90 days; the chart reads these
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
-- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`
+- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`. The Nano settle leg freezes its own quote on the row (`nanoAddress`, `nanoQuotedXno`, `nanoAmountRaw`, `nanoRate`, `nanoQuoteExpiresAt`) and records the confirmed `nanoBlockHash` once the ledger verifies it
 
 ## Security
 

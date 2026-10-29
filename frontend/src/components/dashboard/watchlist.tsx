@@ -10,7 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/use-cart";
-import { useWatchItems, type FetchStatus } from "@/lib/use-watch-items";
+import { useWatchItems, type FetchStatus, type Trend } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { PriceChart } from "./price-chart";
 import { formatPrice, useSettings } from "@/lib/use-settings";
@@ -62,6 +62,37 @@ function StockChip({ inStock }: { inStock: boolean }) {
       className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[11px] text-amber-400"
     >
       sold out
+    </span>
+  );
+}
+
+/** Buy-now-or-wait badge from the item's own price history. */
+function TrendChip({ trend }: { trend: Trend }) {
+  if (trend.verdict === "insufficient") return null;
+  const view = {
+    falling: {
+      label: "▼ falling",
+      className: "border-emerald-500/40 text-emerald-400",
+      hint: (p: number) => `Down ${Math.abs(p).toFixed(1)}% over its observed history — prices are easing`,
+    },
+    rising: {
+      label: "▲ rising",
+      className: "border-red-500/40 text-red-400",
+      hint: (p: number) => `Up ${p.toFixed(1)}% over its observed history — waiting may cost more`,
+    },
+    flat: {
+      label: "→ flat",
+      className: "border-panel-border text-muted",
+      hint: () => "Price has held steady across its observed history",
+    },
+  } as const;
+  const { label, className, hint } = view[trend.verdict];
+  return (
+    <span
+      title={hint(trend.changePct)}
+      className={`rounded-full border px-2 py-0.5 text-[11px] ${className}`}
+    >
+      {label}
     </span>
   );
 }
@@ -126,7 +157,26 @@ export function Watchlist() {
                   <span className="text-zinc-200">{item.title}</span>
                 </span>
               </td>
-              <td className="px-4 py-3 text-muted">{item.retailer}</td>
+              <td className="px-4 py-3 text-muted">
+                <span className="flex items-center gap-1.5">
+                  {item.retailer}
+                  {item.offers.length > 1 && (
+                    <span
+                      title={item.offers
+                        .slice()
+                        .sort((a, b) => a.price - b.price)
+                        .map(
+                          (offer) =>
+                            `${offer.retailer} ${formatPrice(offer.price, settings.currency)}`,
+                        )
+                        .join("  ·  ")}
+                      className="rounded-full border border-cyan-500/40 px-1.5 py-0.5 text-[10px] text-cyan-400"
+                    >
+                      {item.offers.length} offers
+                    </span>
+                  )}
+                </span>
+              </td>
               <td className="px-4 py-3 text-right font-mono">
                 {formatPrice(item.price, settings.currency)}
               </td>
@@ -152,6 +202,7 @@ export function Watchlist() {
                 </span>
                 <FetchChip status={item.fetchStatus} error={item.lastFetchError} />
                 <StockChip inStock={item.inStock} />
+                <TrendChip trend={item.trend} />
                 </span>
               </td>
               <td className="px-4 py-3 text-right font-mono text-[11px] text-muted">

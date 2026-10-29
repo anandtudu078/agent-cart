@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/agent/fetch-price.test.ts src/agent/cycle.test.ts",
+    "test": "tsx --test src/agent/fetch-price.test.ts src/agent/cycle.test.ts src/agent/trend.test.ts",
     "seed": "tsx src/seed.ts",
     "seed:reset": "tsx src/seed.ts --reset"
   },

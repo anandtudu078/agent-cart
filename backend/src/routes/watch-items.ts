@@ -3,17 +3,57 @@ import mongoose from "mongoose";
 import { WatchItem, PricePoint } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { resolveProduct } from "../agent/fetch-price.js";
+import { trendFor, INSUFFICIENT, type Trend } from "../agent/trend.js";
 
 export const watchItemsRouter = Router();
 
 const STATUSES = ["watching", "drop", "paused"] as const;
 
-/** GET /api/watch-items — full watchlist, newest first. */
+// points per item fed to the trend signal — 60 is plenty for the half-split
+// and keeps the aggregation bounded no matter how long an item has run
+const TREND_POINTS = 60;
+
+/**
+ * One aggregation over price_points → trend per item, so the watchlist gets
+ * a buy-now-or-wait badge without an N+1 query per row.
+ * `$topN` needs MongoDB 5.2+ (local mongo:7 / Atlas are both fine).
+ */
+async function trendByItem(
+  ids: readonly unknown[],
+): Promise<Map<string, Trend>> {
+  const map = new Map<string, Trend>();
+  if (ids.length === 0) return map;
+
+  const rows = await PricePoint.aggregate<{ _id: unknown; prices: number[] }>([
+    { $match: { item: { $in: ids } } },
+    {
+      $group: {
+        _id: "$item",
+        // newest first from $topN; trendFor wants oldest first
+        prices: {
+          $topN: { n: TREND_POINTS, output: "$price", sortBy: { at: -1 } },
+        },
+      },
+    },
+  ]);
+  for (const row of rows) map.set(String(row._id), trendFor(row.prices.reverse()));
+  return map;
+}
+
+/** GET /api/watch-items — full watchlist, newest first. Each item carries a
+ * `trend` verdict (`rising | falling | flat | insufficient`) from its own
+ * price history. */
 watchItemsRouter.get("/watch-items", async (req, res) => {
   const items = await WatchItem.find(ownedByUser(req.userId!))
     .sort({ createdAt: -1 })
     .lean();
-  res.json({ items });
+  const trends = await trendByItem(items.map((item) => item._id));
+  res.json({
+    items: items.map((item) => ({
+      ...item,
+      trend: trends.get(String(item._id)) ?? INSUFFICIENT,
+    })),
+  });
 });
 
 /**

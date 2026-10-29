@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isDue } from "./cycle.js";
+import { bestOffer, isDue } from "./cycle.js";
 
 const NOW = new Date("2026-01-01T00:00:00Z");
 
@@ -33,4 +33,36 @@ test("isDue: respects a longer poll interval than the global cycle", () => {
 test("isDue: item due once its interval has fully elapsed", () => {
   const checkedAt = new Date(NOW.getTime() - 31_000);
   assert.equal(isDue(checkedAt, 30, NOW), true);
+});
+
+test("bestOffer: the cheapest offer wins", () => {
+  const best = bestOffer([
+    { retailer: "Amazon", price: 328 },
+    { retailer: "BestBuy", price: 319 },
+    { retailer: "Walmart", price: 341 },
+  ]);
+  assert.equal(best?.retailer, "BestBuy");
+  assert.equal(best?.price, 319);
+});
+
+test("bestOffer: ties keep the first offer seen", () => {
+  const best = bestOffer([
+    { retailer: "Amazon", price: 300 },
+    { retailer: "Walmart", price: 300 },
+  ]);
+  assert.equal(best?.retailer, "Amazon");
+});
+
+test("bestOffer: unusable prices are skipped, never invented", () => {
+  assert.equal(bestOffer([]), null);
+  assert.equal(bestOffer([{ retailer: "Amazon", price: 0 }]), null);
+  assert.equal(bestOffer([{ retailer: "Amazon", price: Number.NaN }]), null);
+  // a bad price does not hide a real one behind it
+  assert.equal(
+    bestOffer([
+      { retailer: "Amazon", price: 0 },
+      { retailer: "Walmart", price: 250 },
+    ])?.retailer,
+    "Walmart",
+  );
 });

@@ -3,17 +3,13 @@ import mongoose from "mongoose";
 import { WatchItem, PricePoint } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { resolveProduct } from "../agent/fetch-price.js";
-<<<<<<< HEAD
 import { trendFor, INSUFFICIENT, type Trend } from "../agent/trend.js";
-=======
 import { bestOffer } from "../agent/cycle.js";
->>>>>>> origin/main
 
 export const watchItemsRouter = Router();
 
 const STATUSES = ["watching", "drop", "paused"] as const;
 
-<<<<<<< HEAD
 // points per item fed to the trend signal — 60 is plenty for the half-split
 // and keeps the aggregation bounded no matter how long an item has run
 const TREND_POINTS = 60;
@@ -48,7 +44,6 @@ async function trendByItem(
 /** GET /api/watch-items — full watchlist, newest first. Each item carries a
  * `trend` verdict (`rising | falling | flat | insufficient`) from its own
  * price history. */
-=======
 // one product, at most this many retailers — enough to compare while keeping
 // a single scan cycle cheap (shortcut: raise alongside a fetch pool)
 const MAX_OFFERS = 5;
@@ -88,7 +83,6 @@ function parseOffers(raw: unknown): { offers?: OfferInput[]; error?: string } {
 }
 
 /** GET /api/watch-items — full watchlist, newest first. */
->>>>>>> origin/main
 watchItemsRouter.get("/watch-items", async (req, res) => {
   const items = await WatchItem.find(ownedByUser(req.userId!))
     .sort({ createdAt: -1 })

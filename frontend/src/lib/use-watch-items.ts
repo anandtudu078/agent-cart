@@ -8,7 +8,6 @@ export type WatchStatus = "watching" | "drop" | "paused";
 /** Where the last price came from: live fetch, or why it wasn't. */
 export type FetchStatus = "ok" | "stale" | "error" | "simulated";
 
-<<<<<<< HEAD
 /** Buy-now-or-wait verdict from the item's own price history. */
 export type TrendVerdict = "rising" | "falling" | "flat" | "insufficient";
 
@@ -16,14 +15,14 @@ export interface Trend {
   verdict: TrendVerdict;
   /** % change of the newer half of the series vs the older half. */
   changePct: number;
-=======
+}
+
 /** One retailer's offer for a watched product. */
 export interface OfferInfo {
   retailer: string;
   price: number;
   url?: string;
   fetchStatus: FetchStatus;
->>>>>>> origin/main
 }
 
 export interface WatchedItem {

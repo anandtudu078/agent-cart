@@ -23,6 +23,8 @@ export interface DropAlert {
   targetPrice: number;
   currency: string;
   autoBuy: boolean;
+  /** PayPal approval link when the order was pre-created at reserve time. */
+  approvalUrl?: string;
 }
 
 function message(alert: DropAlert): string {
@@ -30,9 +32,14 @@ function message(alert: DropAlert): string {
   return (
     `${emoji} **${title}** hit target at ${retailer} — ` +
     `$${oldPrice.toFixed(2)} → $${newPrice.toFixed(2)} (target $${targetPrice.toFixed(2)})` +
-    (alert.autoBuy ? " · held in cart" : "")
+    (alert.autoBuy ? " · held in cart" : "") +
+    // one tap from the alert to PayPal — only when an order exists
+    (alert.approvalUrl ? `\napprove in one tap: ${alert.approvalUrl}` : "")
   );
 }
+
+/** The rendered alert line — exported so the payload is testable. */
+export const dropAlertMessage = message;
 
 /**
  * POST the alert to the owner's configured webhook. Returns false when the
@@ -70,6 +77,7 @@ export async function sendDropAlert(
           to: alert.newPrice,
           target: alert.targetPrice,
         },
+        checkout: { approvalUrl: alert.approvalUrl ?? null },
         at: new Date().toISOString(),
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),

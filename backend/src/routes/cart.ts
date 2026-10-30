@@ -1,8 +1,13 @@
 import { Router } from "express";
 import type { Types } from "mongoose";
 import paypal from "@paypal/checkout-server-sdk";
-import type { core as paypalCore } from "@paypal/checkout-server-sdk";
 import { env } from "../config/env.js";
+import {
+  createEntryOrder,
+  entryTotal,
+  paypalClient,
+  round2,
+} from "../paypal-order.js";
 import {
   ActivityEvent,
   CartEntry,
@@ -20,27 +25,11 @@ import {
 } from "../nano.js";
 
 // default import (not named): Node's CJS/ESM interop can't see the nested
-// `orders` export of this untyped package
-const { core, orders } = paypal;
+// `orders` export of this untyped package — order creation itself lives in
+// ../paypal-order.ts so the scan cycle can pre-create one at reserve time
+const { orders } = paypal;
 
 export const cartRouter = Router();
-
-interface PayPalOrderResult {
-  id: string;
-  status: string;
-  links?: Array<{ rel: string; href: string }>;
-}
-
-/** null until PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET are configured. */
-function paypalClient(): paypalCore.PayPalHttpClient | null {
-  const { clientId, clientSecret, mode } = env.paypal;
-  if (!clientId || !clientSecret) return null;
-  const environment =
-    mode === "live"
-      ? new core.LiveEnvironment(clientId, clientSecret)
-      : new core.SandboxEnvironment(clientId, clientSecret);
-  return new core.PayPalHttpClient(environment);
-}
 
 async function log(
   level: "info" | "ok" | "warn" | "buy",
@@ -56,15 +45,6 @@ async function log(
     alert,
     owner,
   });
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/** What the buyer actually pays for a reserved entry (price − coupon). */
-function entryTotal(entry: { price: number; couponDiscount?: number | null }): number {
-  return round2(entry.price - (entry.couponDiscount ?? 0));
 }
 
 /** GET /api/coupons — codes the agent knows, optionally for one retailer. */
@@ -281,56 +261,33 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
     return;
   }
 
-  const client = paypalClient();
-  if (!client) {
-    res.status(501).json({
-      error:
-        "PayPal is not configured — set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET (sandbox by default)",
-    });
-    return;
-  }
-
   try {
-    const request = new orders.OrdersCreateRequest();
-    request.prefer("return=representation");
-    request.requestBody({
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: {
-            currency_code: entry.currency,
-            value: entryTotal(entry).toFixed(2),
-          },
-          description: entry.itemTitle,
-        },
-      ],
-    });
-    const response = await client.execute<PayPalOrderResult>(request);
-    const approvalUrl = response.result.links?.find(
-      (link) => link.rel === "approve",
-    )?.href;
-
-    entry.paypalOrderId = response.result.id;
-    await entry.save();
-    await HistoryEntry.create({
-      item: entry.watchItem,
-      itemTitle: entry.itemTitle,
-    action: "Checkout started",    detail: `PayPal order ${response.result.id} — $${entryTotal(entry).toFixed(2)} after coupon, awaiting buyer approval`,
-    kind: "buy",
-    owner: entry.owner,
-  });
-  await log(
-    "buy",
-    `checkout started: ${entry.itemTitle} — PayPal order ${response.result.id}`,
-    false,
-    entry.owner,
-  );
+    // one code path for both the manual route and the auto-buy reserve
+    const order = await createEntryOrder(entry);
+    if (!order.ok) {
+      if (order.reason === "not_configured") {
+        res.status(501).json({ error: order.error });
+        return;
+      }
+      await log("warn", `checkout failed: ${order.error}`, false, entry.owner);
+      res.status(502).json({
+        error: `PayPal order creation failed: ${order.error}`,
+      });
+      return;
+    }
+    await log(
+      "buy",
+      `checkout started: ${entry.itemTitle} — PayPal order ${order.orderId}`,
+      false,
+      entry.owner,
+    );
     res.json({
-      orderId: response.result.id,
-      status: response.result.status,
-      approvalUrl,
+      orderId: order.orderId,
+      status: order.status,
+      approvalUrl: order.approvalUrl,
     });
   } catch (err) {
+    // createEntryOrder reports its own failures — this is a last resort
     await log(
       "warn",
       `checkout failed: ${err instanceof Error ? err.message : String(err)}`,

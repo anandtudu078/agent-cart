@@ -12,6 +12,7 @@ import { fetchPriceUpdates } from "./service.js";
 import { fetchLivePrice, type PriceFetch } from "./fetch-price.js";
 import { sendDropAlert } from "./webhook.js";
 import { bestCoupon, couponDiscount } from "../coupons.js";
+import { createEntryOrder } from "../paypal-order.js";
 
 export interface CycleSummary {
   scanned: number;
@@ -142,8 +143,15 @@ export function shouldAutoBuy(input: {
  * Hold `item` in the cart for auto-buy — the one place that decides between
  * "already reserved" and "create the entry". Shared by the fresh-drop and the
  * back-in-stock paths.
+ *
+ * Returns the PayPal approval link when an order was pre-created at reserve
+ * time (undefined when PayPal is unset or the call failed), so the caller's
+ * alert can offer a one-tap checkout.
  */
-async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void> {
+async function reserveIntoCart(
+  item: WatchItemDoc,
+  price: number,
+): Promise<string | undefined> {
   const held = await CartEntry.findOne({
     watchItem: item._id,
     status: "reserved",
@@ -160,7 +168,7 @@ async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void>
   // best code for this retailer, priced at the reserved (frozen) price
   const coupon = bestCoupon(item.retailer, price);
   const discount = coupon ? couponDiscount(coupon, price) : 0;
-  await CartEntry.create({
+  const entry = await CartEntry.create({
     watchItem: item._id,
     itemTitle: item.title,
     retailer: item.retailer,
@@ -203,6 +211,22 @@ async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void>
       item.owner,
     );
   }
+
+  // pre-create the PayPal order while we are here, so the drop alert below
+  // can carry a one-tap approval link — undefined when PayPal is unset
+  const order = await createEntryOrder(entry);
+  if (!order.ok) {
+    if (order.reason === "failed") {
+      await log(
+        "warn",
+        `checkout pre-create failed: ${item.title} — ${order.error}`,
+        false,
+        item.owner,
+      );
+    }
+    return undefined;
+  }
+  return order.approvalUrl;
 }
 
 /**
@@ -502,20 +526,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           true, // surfaced as a toast/desktop notification on the dashboard
           item.owner,
         );
-        // out-of-app alert — fire-and-forget so a dead webhook can't stall
-        // the cycle that found the drop
-        void sendDropAlert(item.owner, {
-          itemId: item.id,
-          title: item.title,
-          retailer: item.retailer,
-          emoji: item.emoji,
-          url: item.url ?? undefined,
-          oldPrice,
-          newPrice: nextPrice,
-          targetPrice: item.targetPrice,
-          currency: item.currency,
-          autoBuy: item.autoBuy,
-        });
+        // filled in when auto-buy reserves below — the alert carries it
+        let approvalUrl: string | undefined;
         if (item.autoBuy && item.inStock === false) {
           await HistoryEntry.create({
             item: item._id,
@@ -541,8 +553,24 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
             inStock: item.inStock !== false,
           })
         ) {
-          await reserveIntoCart(item, nextPrice);
+          approvalUrl = await reserveIntoCart(item, nextPrice);
         }
+        // out-of-app alert — fire-and-forget so a dead webhook can't stall
+        // the cycle that found the drop. Sent after the reserve so it can
+        // carry the pre-created approval link
+        void sendDropAlert(item.owner, {
+          itemId: item.id,
+          title: item.title,
+          retailer: item.retailer,
+          emoji: item.emoji,
+          url: item.url ?? undefined,
+          oldPrice,
+          newPrice: nextPrice,
+          targetPrice: item.targetPrice,
+          currency: item.currency,
+          autoBuy: item.autoBuy,
+          approvalUrl,
+        });
       } else if (
         // a sold-out item that comes back while still at/below target never
         // re-enters the fresh-drop branch above (its status stayed `drop`)

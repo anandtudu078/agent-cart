@@ -25,6 +25,9 @@ export const cartEntrySchema = new Schema(
       index: true,
     },
     paypalOrderId: { type: String },
+    // approval link from the order created at reserve time — the drop alert
+    // carries it so the buyer can approve in one tap (fresh orders overwrite)
+    paypalApprovalUrl: { type: String },
     // Nano settle leg — the quote is frozen when requested and the entry only
     // flips to checked_out once verifySendBlock() confirms a settled send.
     // raw amounts are uint128 decimal strings: BSON has no bigint.

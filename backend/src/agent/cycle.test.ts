@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bestOffer, isDue } from "./cycle.js";
+import { bestOffer, isDue, shouldAutoBuy } from "./cycle.js";
 
 const NOW = new Date("2026-01-01T00:00:00Z");
 
@@ -51,6 +51,77 @@ test("bestOffer: ties keep the first offer seen", () => {
     { retailer: "Walmart", price: 300 },
   ]);
   assert.equal(best?.retailer, "Amazon");
+});
+
+test("shouldAutoBuy: fresh drop at target buys when in stock", () => {
+  assert.equal(
+    shouldAutoBuy({
+      autoBuy: true,
+      hitTarget: true,
+      freshDrop: true,
+      restocked: false,
+      inStock: true,
+    }),
+    true,
+  );
+});
+
+test("shouldAutoBuy: sold out at target holds off", () => {
+  assert.equal(
+    shouldAutoBuy({
+      autoBuy: true,
+      hitTarget: true,
+      freshDrop: true,
+      restocked: false,
+      inStock: false,
+    }),
+    false,
+  );
+});
+
+test("shouldAutoBuy: restock while still at target retries the missed buy", () => {
+  // the item sold out at target: status stays `drop`, so `freshDrop` is false
+  // on every later cycle — without the restock leg the buy never happens
+  assert.equal(
+    shouldAutoBuy({
+      autoBuy: true,
+      hitTarget: true,
+      freshDrop: false,
+      restocked: true,
+      inStock: true,
+    }),
+    true,
+  );
+});
+
+test("shouldAutoBuy: no buy without autoBuy, target, or stock", () => {
+  const base = {
+    hitTarget: true,
+    freshDrop: false,
+    restocked: true,
+    inStock: true,
+  };
+  assert.equal(shouldAutoBuy({ ...base, autoBuy: false }), false);
+  assert.equal(
+    shouldAutoBuy({ ...base, autoBuy: true, hitTarget: false }),
+    false,
+  );
+  assert.equal(shouldAutoBuy({ ...base, autoBuy: true, inStock: false }), false);
+  // still above target after the restock: report it, but buy nothing
+  assert.equal(
+    shouldAutoBuy({ ...base, autoBuy: true, restocked: true, hitTarget: false }),
+    false,
+  );
+  // in stock again but not at target and not a fresh drop → nothing
+  assert.equal(
+    shouldAutoBuy({
+      ...base,
+      autoBuy: true,
+      restocked: false,
+      freshDrop: false,
+    }),
+    false,
+  );
 });
 
 test("bestOffer: unusable prices are skipped, never invented", () => {

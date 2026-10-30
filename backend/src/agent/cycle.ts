@@ -116,6 +116,72 @@ export function isDue(
   return lastCheckedAt.getTime() + pollIntervalSec * 1_000 <= now.getTime();
 }
 
+/** The watch-item document shape `runScanCycle` iterates over. */
+type WatchItemDoc = NonNullable<Awaited<ReturnType<typeof WatchItem.findOne>>>;
+
+/**
+ * Whether this cycle should try to reserve the item for auto-buy.
+ *
+ * Two ways in: the price freshly hits target, or an item that sold out while
+ * at target comes back (its status is already `drop`, so the fresh-drop branch
+ * never fires again for it). Either way the item must be buyable now.
+ */
+export function shouldAutoBuy(input: {
+  autoBuy: boolean;
+  hitTarget: boolean;
+  freshDrop: boolean;
+  restocked: boolean;
+  inStock: boolean;
+}): boolean {
+  if (!input.autoBuy || !input.hitTarget || !input.inStock) return false;
+  return input.freshDrop || input.restocked;
+}
+
+/**
+ * Hold `item` in the cart for auto-buy — the one place that decides between
+ * "already reserved" and "create the entry". Shared by the fresh-drop and the
+ * back-in-stock paths.
+ */
+async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void> {
+  const held = await CartEntry.findOne({
+    watchItem: item._id,
+    status: "reserved",
+  });
+  if (held) {
+    await log(
+      "info",
+      `auto-buy skipped: ${item.title} is already in the cart`,
+      false,
+      item.owner,
+    );
+    return;
+  }
+  await CartEntry.create({
+    watchItem: item._id,
+    itemTitle: item.title,
+    retailer: item.retailer,
+    emoji: item.emoji,
+    price,
+    currency: item.currency,
+    owner: item.owner,
+  });
+  await HistoryEntry.create({
+    item: item._id,
+    itemTitle: item.title,
+    action: "Auto-bought",
+    detail: `Pulled into the cart at $${price.toFixed(2)} (target $${item.targetPrice.toFixed(2)}) — approve checkout to buy`,
+    kind: "buy",
+    price,
+    owner: item.owner,
+  });
+  await log(
+    "buy",
+    `auto-buy: ${item.title} $${price.toFixed(2)} at ${item.retailer} — held in cart`,
+    true,
+    item.owner,
+  );
+}
+
 /**
  * One scan cycle: re-check every non-paused watch item, nudge its price,
  * recompute delta/status, and record each decision in history + activity.
@@ -329,6 +395,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
 
       const wasDrop = item.status === "drop";
       const hitTarget = item.targetPrice > 0 && nextPrice <= item.targetPrice;
+      // sold out at the last scan, available again now
+      const restocked = !wasInStock && item.inStock === true;
 
       item.price = nextPrice;
       item.deltaPct =
@@ -353,6 +421,24 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           "warn",
           `out of stock: ${item.title} at ${item.retailer} — auto-buy held off`,
           false,
+          item.owner,
+        );
+      }
+
+      if (restocked) {
+        await HistoryEntry.create({
+          item: item._id,
+          itemTitle: item.title,
+          action: "Back in stock",
+          detail: `${item.retailer} reports it available again at $${nextPrice.toFixed(2)} — the hold on auto-buy is lifted`,
+          kind: "alert",
+          price: nextPrice,
+          owner: item.owner,
+        });
+        await log(
+          "ok",
+          `back in stock: ${item.title} at ${item.retailer} — auto-buy resumed`,
+          true, // same toast / desktop-notification path as a price drop
           item.owner,
         );
       }
@@ -423,45 +509,30 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
             false,
             item.owner,
           );
-        } else if (item.autoBuy) {
-          const held = await CartEntry.findOne({
-            watchItem: item._id,
-            status: "reserved",
-          });
-          if (held) {
-            await log(
-              "info",
-              `auto-buy skipped: ${item.title} is already in the cart`,
-              false,
-              item.owner,
-            );
-          } else {
-            await CartEntry.create({
-              watchItem: item._id,
-              itemTitle: item.title,
-              retailer: item.retailer,
-              emoji: item.emoji,
-              price: item.price,
-              currency: item.currency,
-              owner: item.owner,
-            });
-            await HistoryEntry.create({
-              item: item._id,
-              itemTitle: item.title,
-              action: "Auto-bought",
-              detail: `Pulled into the cart at $${nextPrice.toFixed(2)} (target $${item.targetPrice.toFixed(2)}) — approve checkout to buy`,
-              kind: "buy",
-              price: nextPrice,
-              owner: item.owner,
-            });
-            await log(
-              "buy",
-              `auto-buy: ${item.title} $${nextPrice.toFixed(2)} at ${item.retailer} — held in cart`,
-              true,
-              item.owner,
-            );
-          }
+        } else if (
+          shouldAutoBuy({
+            autoBuy: item.autoBuy,
+            hitTarget,
+            freshDrop: true,
+            restocked,
+            inStock: item.inStock !== false,
+          })
+        ) {
+          await reserveIntoCart(item, nextPrice);
         }
+      } else if (
+        // a sold-out item that comes back while still at/below target never
+        // re-enters the fresh-drop branch above (its status stayed `drop`)
+        // — this is the auto-buy it missed when it sold out
+        shouldAutoBuy({
+          autoBuy: item.autoBuy,
+          hitTarget,
+          freshDrop: false,
+          restocked,
+          inStock: item.inStock !== false,
+        })
+      ) {
+        await reserveIntoCart(item, nextPrice);
       }
     }
 

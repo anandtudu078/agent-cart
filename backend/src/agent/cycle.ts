@@ -11,6 +11,7 @@ import { env } from "../config/env.js";
 import { fetchPriceUpdates } from "./service.js";
 import { fetchLivePrice, type PriceFetch } from "./fetch-price.js";
 import { sendDropAlert } from "./webhook.js";
+import { bestCoupon, couponDiscount } from "../coupons.js";
 
 export interface CycleSummary {
   scanned: number;
@@ -156,6 +157,9 @@ async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void>
     );
     return;
   }
+  // best code for this retailer, priced at the reserved (frozen) price
+  const coupon = bestCoupon(item.retailer, price);
+  const discount = coupon ? couponDiscount(coupon, price) : 0;
   await CartEntry.create({
     watchItem: item._id,
     itemTitle: item.title,
@@ -163,6 +167,8 @@ async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void>
     emoji: item.emoji,
     price,
     currency: item.currency,
+    couponCode: coupon?.code,
+    couponDiscount: discount,
     owner: item.owner,
   });
   await HistoryEntry.create({
@@ -180,6 +186,23 @@ async function reserveIntoCart(item: WatchItemDoc, price: number): Promise<void>
     true,
     item.owner,
   );
+  if (coupon) {
+    await HistoryEntry.create({
+      item: item._id,
+      itemTitle: item.title,
+      action: "Coupon applied",
+      detail: `${coupon.code} saved $${discount.toFixed(2)} at ${item.retailer} — applied automatically on reserve ($${price.toFixed(2)} → $${(price - discount).toFixed(2)})`,
+      kind: "buy",
+      price,
+      owner: item.owner,
+    });
+    await log(
+      "ok",
+      `coupon applied: ${coupon.code} on ${item.title} — $${discount.toFixed(2)} off at ${item.retailer}`,
+      false,
+      item.owner,
+    );
+  }
 }
 
 /**

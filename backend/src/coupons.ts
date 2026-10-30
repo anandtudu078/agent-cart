@@ -41,6 +41,28 @@ export function findCoupon(code: string, retailer: string): Coupon | null {
   );
 }
 
+/**
+ * The code worth applying at `retailer` for `price`: the one that saves the
+ * most. Null when nothing beats zero — a code that does nothing is noise on
+ * the receipt.
+ *
+ * shortcut: only one coupon per cart entry is supported (the schema stores a
+ * single `couponCode`), so this picks a winner rather than a combination —
+ * lift the limit first if coupons ever stack.
+ */
+export function bestCoupon(retailer: string, price: number): Coupon | null {
+  let best: Coupon | null = null;
+  let bestDiscount = 0;
+  for (const coupon of listCoupons(retailer)) {
+    const discount = couponDiscount(coupon, price);
+    if (discount > bestDiscount) {
+      best = coupon;
+      bestDiscount = discount;
+    }
+  }
+  return best;
+}
+
 /** Dollar discount for `coupon` against `price`, floored at 0. */
 export function couponDiscount(coupon: Coupon, price: number): number {
   const raw =

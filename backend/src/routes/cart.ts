@@ -10,7 +10,7 @@ import {
   WatchItem,
 } from "../models/index.js";
 import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
-import { couponDiscount, findCoupon, listCoupons } from "../coupons.js";
+import { bestCoupon, couponDiscount, findCoupon, listCoupons } from "../coupons.js";
 import {
   isBlockHash,
   nanoConfigured,
@@ -202,6 +202,9 @@ cartRouter.post("/cart", async (req, res) => {
     return;
   }
 
+  // best code for this retailer, priced at the reserved (frozen) price
+  const coupon = bestCoupon(item.retailer, item.price);
+  const discount = coupon ? couponDiscount(coupon, item.price) : 0;
   const entry = await CartEntry.create({
     watchItem: item._id,
     itemTitle: item.title,
@@ -209,6 +212,8 @@ cartRouter.post("/cart", async (req, res) => {
     emoji: item.emoji,
     price: item.price,
     currency: item.currency,
+    couponCode: coupon?.code,
+    couponDiscount: discount,
     owner: req.userId,
   });
   await HistoryEntry.create({
@@ -225,6 +230,22 @@ cartRouter.post("/cart", async (req, res) => {
     false,
     entry.owner,
   );
+  if (coupon) {
+    await HistoryEntry.create({
+      item: item._id,
+      itemTitle: item.title,
+      action: "Coupon applied",
+      detail: `${coupon.code} saved $${discount.toFixed(2)} at ${item.retailer} — applied automatically on reserve ($${item.price.toFixed(2)} → $${(item.price - discount).toFixed(2)})`,
+      kind: "buy",
+      owner: entry.owner,
+    });
+    await log(
+      "ok",
+      `coupon applied: ${coupon.code} on ${item.title} — $${discount.toFixed(2)} off at ${item.retailer}`,
+      false,
+      entry.owner,
+    );
+  }
   res.status(201).json({ entry });
 });
 

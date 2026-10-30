@@ -295,7 +295,12 @@ cartRouter.post("/cart/:id/checkout", async (req, res) => {
       entry.owner,
     );
     res.status(502).json({
-      error: `PayPal order creation failed: ${err instanceof Error ? err.message : String(err)}`,
+      // PayPal's own message can carry request details — never send it to a
+      // client in production; the activity log keeps the real reason
+      error:
+        env.nodeEnv === "production"
+          ? "PayPal order creation failed"
+          : `PayPal order creation failed: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 });
@@ -353,7 +358,12 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
       entry.owner,
     );
     res.status(502).json({
-      error: `PayPal capture failed: ${err instanceof Error ? err.message : String(err)}`,
+      // PayPal's own message can carry request details — never send it to a
+      // client in production; the activity log keeps the real reason
+      error:
+        env.nodeEnv === "production"
+          ? "PayPal capture failed"
+          : `PayPal capture failed: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 });

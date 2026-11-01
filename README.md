@@ -30,6 +30,8 @@ Built today:
 | Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
 | Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
 | Natural-language commands | ✅ one input box on the watchlist — “watch Sony WH-1000XM5 now $328 under $300, auto-buy”, “pause Keychron K2”, “set target for Keychron K2 to $79” → `POST /api/agent/command`, parsed by the agent service (LLM when `OPENAI_API_KEY` is set, deterministic keyword fallback otherwise) and executed against the existing watch-item routes; every command lands in history + the activity feed |
+| Auto-buy guardrails | ✅ per-user safety net checked before every auto-buy reserve — a USD/day budget cap and a confirm-before-buy toggle, set in Settings; a held buy lands in History as `Auto-buy held` with the reason, and the row's cart button still reserves by hand |
+| Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
@@ -103,6 +105,9 @@ npm run dev             # dashboard on http://localhost:3000
 | `NANO_RPC_URL` | `https://nanorpc.cc` | public ledger node used to read send blocks — no key needed |
 | `XNO_USD_RATE` | — | rate used when the CoinGecko price feed is unreachable |
 | `AGENT_SERVICE_URL` | `http://localhost:8000` | Python agent service; scan cycles fall back to local jitter when unreachable |
+| `RESEND_API_KEY` | — | sends drop emails + the daily digest; empty disables email entirely (503-free, just no email) |
+| `EMAIL_FROM` | `AgentCart <onboarding@resend.dev>` | verified sender identity in Resend |
+| `DIGEST_HOUR` | `9` | UTC hour (0–23) the daily digest goes out, at most once per day |
 | `AGENT_INTERVAL_SEC` | `30` | seconds between scan cycles (min 5) |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | frontend → backend base URL |
 

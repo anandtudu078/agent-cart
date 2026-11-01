@@ -5,12 +5,15 @@ import {
   ActivityEvent,
   CartEntry,
   PricePoint,
+  User,
   type PricePointDoc,
 } from "../models/index.js";
 import { env } from "../config/env.js";
 import { fetchPriceUpdates } from "./service.js";
 import { fetchLivePrice, type PriceFetch } from "./fetch-price.js";
 import { sendDropAlert } from "./webhook.js";
+import { sendDropEmail } from "./email.js";
+import { autoBuyHoldReason } from "./guard.js";
 import { bestCoupon, couponDiscount } from "../coupons.js";
 import { createEntryOrder } from "../paypal-order.js";
 
@@ -168,6 +171,51 @@ async function reserveIntoCart(
   // best code for this retailer, priced at the reserved (frozen) price
   const coupon = bestCoupon(item.retailer, price);
   const discount = coupon ? couponDiscount(coupon, price) : 0;
+
+  // guardrails first: confirm-before-buy and the daily cap both hold the
+  // reserve with a history line the user can act on (the row's cart button
+  // still reserves manually)
+  const user = item.owner
+    ? await User.findById(item.owner)
+        .select("settings.confirmBeforeBuy settings.autoBuyDailyCap")
+        .lean()
+    : null;
+  const spentToday = item.owner
+    ? await CartEntry.aggregate<{ total: number }>([
+        {
+          $match: {
+            owner: item.owner,
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1_000) },
+          },
+        },
+        { $group: { _id: null, total: { $sum: { $subtract: ["$price", "$couponDiscount"] } } } },
+      ])
+    : [];
+  const holdReason = autoBuyHoldReason({
+    confirmBeforeBuy: user?.settings?.confirmBeforeBuy ?? false,
+    dailyCapUsd: user?.settings?.autoBuyDailyCap ?? 0,
+    spentTodayUsd: spentToday[0]?.total ?? 0,
+    price,
+    discount,
+  });
+  if (holdReason) {
+    await HistoryEntry.create({
+      item: item._id,
+      itemTitle: item.title,
+      action: "Auto-buy held",
+      detail: `Target hit at $${price.toFixed(2)} but ${holdReason} — nothing reserved`,
+      kind: "alert",
+      price,
+      owner: item.owner,
+    });
+    await log(
+      "warn",
+      `auto-buy held: ${item.title} — ${holdReason}`,
+      false,
+      item.owner,
+    );
+    return undefined;
+  }
   const entry = await CartEntry.create({
     watchItem: item._id,
     itemTitle: item.title,
@@ -558,7 +606,7 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         // out-of-app alert — fire-and-forget so a dead webhook can't stall
         // the cycle that found the drop. Sent after the reserve so it can
         // carry the pre-created approval link
-        void sendDropAlert(item.owner, {
+        const dropAlert = {
           itemId: item.id,
           title: item.title,
           retailer: item.retailer,
@@ -570,7 +618,10 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           currency: item.currency,
           autoBuy: item.autoBuy,
           approvalUrl,
-        });
+        };
+        void sendDropAlert(item.owner, dropAlert);
+        // same for email when the user saved an alert address
+        void sendDropEmail(item.owner, dropAlert);
       } else if (
         // a sold-out item that comes back while still at/below target never
         // re-enters the fresh-drop branch above (its status stayed `drop`)

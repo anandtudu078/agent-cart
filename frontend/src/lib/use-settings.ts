@@ -8,12 +8,21 @@ export interface UserSettings {
   priceAlerts: boolean;
   /** Empty = in-app only; otherwise the agent POSTs drops to this URL. */
   webhookUrl: string;
+  /** Empty = no email alerts; otherwise drops + the daily digest go here. */
+  alertEmail: string;
+  /** USD/day auto-buy budget; 0 = no cap. */
+  autoBuyDailyCap: number;
+  /** Hold every auto-buy until the user confirms it manually. */
+  confirmBeforeBuy: boolean;
 }
 
 const DEFAULTS: UserSettings = {
   currency: "USD",
   priceAlerts: true,
   webhookUrl: "",
+  alertEmail: "",
+  autoBuyDailyCap: 0,
+  confirmBeforeBuy: false,
 };
 
 // shortcut: module-level cache so the sidebar, watchlist, and toasts share

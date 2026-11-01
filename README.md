@@ -29,6 +29,7 @@ Built today:
 | Price history | ✅ `price_points` collection written once per observed price (90-day TTL) → `GET /api/watch-items/:id/series` feeds the chart |
 | Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
 | Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
+| Natural-language commands | ✅ one input box on the watchlist — “watch Sony WH-1000XM5 now $328 under $300, auto-buy”, “pause Keychron K2”, “set target for Keychron K2 to $79” → `POST /api/agent/command`, parsed by the agent service (LLM when `OPENAI_API_KEY` is set, deterministic keyword fallback otherwise) and executed against the existing watch-item routes; every command lands in history + the activity feed |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
@@ -121,6 +122,7 @@ returns 401.
 - `DELETE /api/watch-items/:id` — stop watching
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
+- `POST /api/agent/command` — run one plain-language command `{text}` (max 500 chars): `watch … under $X`, `pause|resume <item>`, `set target for <item> to $X`, `auto-buy <item>`. The body is parsed by the agent service against your own watchlist (for title matching), re-validated server-side, then executed — creating or patching the watch item and recording a `history` entry + activity line. Answers `{action, reply, item?}`; 422 carries the agent's `reply` when it didn't understand, 503 when the agent service is unreachable
 - `GET /api/cart` — reserved cart items + `subtotal`, `discount`, `total`
 - `GET /api/coupons` — coupon codes the agent knows (`?retailer=` narrows to one retailer)
 - `POST /api/cart/:id/coupon` — apply `{code}` to a reserved entry (404 when invalid for that retailer)
@@ -138,6 +140,7 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 - `GET /health` — liveness + whether the LLM is configured
 - `POST /scan` — `{items: [{id, title, retailer, price, targetPrice}]}` → `{source: llm|fallback, updates: [{id, price, reason}]}` (every price clamped to ±3%)
+- `POST /parse` — `{text, items: [{id, title, retailer}]}` → `{action: watch|pause|resume|set_target|auto_buy|unknown, itemId?, title?, price?, targetPrice?, url?, autoBuy?, pollIntervalSec?, reply, source: llm|fallback}`. `items` is the caller's watchlist, offered only so a command can match an existing row — it never leaves the service
 
 ## Data model
 

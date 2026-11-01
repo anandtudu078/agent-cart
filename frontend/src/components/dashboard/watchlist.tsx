@@ -12,6 +12,7 @@ import {
 import { useCart } from "@/lib/use-cart";
 import { useWatchItems, type FetchStatus, type Trend } from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
+import { CommandBar } from "./command-bar";
 import { PriceChart } from "./price-chart";
 import { formatPrice, useSettings } from "@/lib/use-settings";
 
@@ -99,7 +100,7 @@ function TrendChip({ trend }: { trend: Trend }) {
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
-  const { items, loading, add, remove, setItem } = useWatchItems();
+  const { items, loading, add, remove, setItem, refresh } = useWatchItems();
   const { settings } = useSettings();
   const cart = useCart();
   const [cartNotice, setCartNotice] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export function Watchlist() {
         <div className="w-full rounded-xl border border-panel-border bg-panel/60 p-8 text-center font-mono text-sm text-muted">
           no watch items yet — add your first one
         </div>
+        <CommandBar onExecuted={refresh} />
         <AddWatchItemForm onAdd={add} />
       </div>
     );
@@ -127,6 +129,7 @@ export function Watchlist() {
 
   return (
     <>
+      <CommandBar onExecuted={refresh} />
       <AddWatchItemForm onAdd={add} />
       {cartNotice && (
         <p className="mb-2 text-xs text-amber-400">{cartNotice}</p>

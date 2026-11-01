@@ -11,6 +11,7 @@ import { authRouter } from "./routes/auth.js";
 import { watchItemsRouter } from "./routes/watch-items.js";
 import { historyRouter } from "./routes/history.js";
 import { agentRouter } from "./routes/agent.js";
+import { commandRouter } from "./routes/command.js";
 import { cartRouter } from "./routes/cart.js";
 import { startAgentLoop } from "./agent/cycle.js";
 
@@ -50,6 +51,7 @@ app.use("/api", requireAuth, activityRouter);
 app.use("/api", requireAuth, watchItemsRouter);
 app.use("/api", requireAuth, historyRouter);
 app.use("/api", requireAuth, agentRouter);
+app.use("/api", requireAuth, commandRouter);
 app.use("/api", requireAuth, cartRouter);
 
 // 404 fallback for unknown API routes

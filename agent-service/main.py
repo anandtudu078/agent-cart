@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from parser import CommandContext, CommandIntent, parse
 from scanner import ScanResult, PriceItem, llm_enabled, scan
 
 app = FastAPI(title="AgentCart Agent Service", version="0.1.0")
@@ -28,3 +29,19 @@ def health() -> dict:
 async def scan_endpoint(request: ScanRequest) -> ScanResult:
     """Return one price decision per item (LLM when configured, else fallback)."""
     return await scan(request.items)
+
+
+class ParseRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    items: list[CommandContext] = Field(default_factory=list, max_length=500)
+
+
+@app.post("/parse", response_model=CommandIntent)
+async def parse_endpoint(request: ParseRequest) -> CommandIntent:
+    """Turn one plain-language command into a structured intent.
+
+    `items` is the caller's own watchlist, offered only so the parser can
+    match a command like "pause the K2" to an existing row. It never leaves
+    this endpoint.
+    """
+    return await parse(request.text, request.items)

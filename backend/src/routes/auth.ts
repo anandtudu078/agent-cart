@@ -119,9 +119,19 @@ authRouter.patch("/settings", async (req, res) => {
     currency?: unknown;
     priceAlerts?: unknown;
     webhookUrl?: unknown;
+    alertEmail?: unknown;
+    autoBuyDailyCap?: unknown;
+    confirmBeforeBuy?: unknown;
   };
 
-  const patch: { currency?: string; priceAlerts?: boolean; webhookUrl?: string } = {};
+  const patch: {
+    currency?: string;
+    priceAlerts?: boolean;
+    webhookUrl?: string;
+    alertEmail?: string;
+    autoBuyDailyCap?: number;
+    confirmBeforeBuy?: boolean;
+  } = {};
   if (body.currency !== undefined) {
     if (
       typeof body.currency !== "string" ||
@@ -152,14 +162,44 @@ authRouter.patch("/settings", async (req, res) => {
     patch.webhookUrl = url;
   }
 
+  if (body.alertEmail !== undefined) {
+    const email = typeof body.alertEmail === "string" ? body.alertEmail.trim() : null;
+    // empty string clears the address (turns email alerts off)
+    if (email === null || (email !== "" && !EMAIL_RE.test(email))) {
+      res.status(400).json({ error: "alertEmail must be an email address" });
+      return;
+    }
+    patch.alertEmail = email.toLowerCase();
+  }
+  if (body.autoBuyDailyCap !== undefined) {
+    const cap = body.autoBuyDailyCap;
+    if (typeof cap !== "number" || !Number.isFinite(cap) || cap < 0 || cap > 1_000_000) {
+      res.status(400).json({ error: "autoBuyDailyCap must be a number between 0 and 1000000 (0 = no cap)" });
+      return;
+    }
+    patch.autoBuyDailyCap = cap;
+  }
+  if (body.confirmBeforeBuy !== undefined) {
+    if (typeof body.confirmBeforeBuy !== "boolean") {
+      res.status(400).json({ error: "confirmBeforeBuy must be a boolean" });
+      return;
+    }
+    patch.confirmBeforeBuy = body.confirmBeforeBuy;
+  }
+
   // dotted paths: the fields live under the `settings` subdocument, and a
   // flat $set would silently match nothing
-  const setOps: Record<string, string | boolean> = {};
+  const setOps: Record<string, string | boolean | number> = {};
   if (patch.currency !== undefined) setOps["settings.currency"] = patch.currency;
   if (patch.priceAlerts !== undefined)
     setOps["settings.priceAlerts"] = patch.priceAlerts;
   if (patch.webhookUrl !== undefined)
     setOps["settings.webhookUrl"] = patch.webhookUrl;
+  if (patch.alertEmail !== undefined) setOps["settings.alertEmail"] = patch.alertEmail;
+  if (patch.autoBuyDailyCap !== undefined)
+    setOps["settings.autoBuyDailyCap"] = patch.autoBuyDailyCap;
+  if (patch.confirmBeforeBuy !== undefined)
+    setOps["settings.confirmBeforeBuy"] = patch.confirmBeforeBuy;
 
   const user = await User.findByIdAndUpdate(
     userId,

@@ -14,6 +14,7 @@ import { agentRouter } from "./routes/agent.js";
 import { commandRouter } from "./routes/command.js";
 import { cartRouter } from "./routes/cart.js";
 import { startAgentLoop } from "./agent/cycle.js";
+import { startDigestTimer } from "./agent/digest.js";
 
 const app = express();
 
@@ -103,6 +104,7 @@ app.use(
 // --- Bootstrap -------------------------------------------------------------
 await connectDB();
 startAgentLoop();
+startDigestTimer();
 
 app.listen(env.port, () => {
   console.log(

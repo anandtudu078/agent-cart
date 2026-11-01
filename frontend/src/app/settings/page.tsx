@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Trash2, Wallet, Webhook } from "lucide-react";
+import { BellRing, Mail, ShieldCheck, Trash2, Wallet, Webhook } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useSettings } from "@/lib/use-settings";
 
@@ -17,7 +17,45 @@ export default function SettingsPage() {
   // null = no edit yet, so the field mirrors the stored value until typing
   const [webhookDraft, setWebhookDraft] = useState<string | null>(null);
   const webhookUrl = webhookDraft ?? settings.webhookUrl;
+  const [emailDraft, setEmailDraft] = useState<string | null>(null);
+  const alertEmail = emailDraft ?? settings.alertEmail;
+  const [capDraft, setCapDraft] = useState<string | null>(null);
+  const autoBuyDailyCap = capDraft ?? String(settings.autoBuyDailyCap);
   const router = useRouter();
+
+  async function saveEmail(event: React.FormEvent) {
+    event.preventDefault();
+    const next = alertEmail.trim();
+    const err = await save({ alertEmail: next });
+    setNotice(
+      err ??
+        (next
+          ? `Email alerts on — drops and the daily digest go to ${next}.`
+          : "Email alerts off — alerts stay in the app."),
+    );
+    if (!err) setEmailDraft(null);
+  }
+
+  async function saveCap(event: React.FormEvent) {
+    event.preventDefault();
+    if (!autoBuyDailyCap.trim()) {
+      setNotice("Daily cap must be a number of 0 or more (0 = no cap).");
+      return;
+    }
+    const cap = Number(autoBuyDailyCap);
+    if (!Number.isFinite(cap) || cap < 0) {
+      setNotice("Daily cap must be a number of 0 or more (0 = no cap).");
+      return;
+    }
+    const err = await save({ autoBuyDailyCap: cap });
+    setNotice(
+      err ??
+        (cap > 0
+          ? `Daily auto-buy cap set to $${cap.toFixed(2)}.`
+          : "Daily auto-buy cap cleared — no limit."),
+    );
+    if (!err) setCapDraft(null);
+  }
 
   async function saveWebhook(event: React.FormEvent) {
     event.preventDefault();
@@ -164,6 +202,89 @@ export default function SettingsPage() {
             className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10 disabled:opacity-60"
           >
             Save webhook
+          </button>
+        </form>
+      </section>
+
+      {/* Auto-buy guardrails */}
+      <section className="rounded-xl border border-panel-border bg-panel/60 p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <ShieldCheck className="h-4 w-4 text-cyan-400" aria-hidden />
+          Auto-buy guardrails
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          Limits on what the agent may pull into the cart on its own when a
+          target is hit. A held buy shows up in History — you can still reserve
+          the item from the watchlist by hand.
+        </p>
+        <form onSubmit={saveCap} className="mt-4 flex flex-wrap items-center gap-2">
+          <label className="text-xs text-muted">
+            Daily cap ($)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={autoBuyDailyCap}
+              onChange={(e) => setCapDraft(e.target.value)}
+              aria-label="Daily auto-buy cap in dollars"
+              className="mt-1.5 w-32 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10"
+          >
+            Save cap
+          </button>
+          <span className="text-[11px] text-muted">0 = no cap</span>
+        </form>
+        <label className="mt-4 flex items-center gap-2 text-sm text-zinc-300">
+          <input
+            type="checkbox"
+            checked={settings.confirmBeforeBuy}
+            onChange={(e) => {
+              const on = e.target.checked;
+              void save({ confirmBeforeBuy: on }).then((err) =>
+                setNotice(
+                  err ??
+                    (on
+                      ? "Confirm-before-buy on — the agent holds every drop for you."
+                      : "Confirm-before-buy off — auto-buy runs on its own again."),
+                ),
+              );
+            }}
+            className="h-4 w-4 accent-cyan-500"
+          />
+          Confirm before buying (hold every auto-buy)
+        </label>
+      </section>
+
+      {/* Email alerts */}
+      <section className="rounded-xl border border-panel-border bg-panel/60 p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Mail className="h-4 w-4 text-cyan-400" aria-hidden />
+          Email alerts
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          The agent emails you the moment an item hits its target, plus a daily
+          digest of everything it found. Needs the API&apos;s
+          <code className="mx-1 rounded bg-panel px-1 py-0.5 text-[11px]">RESEND_API_KEY</code>
+          to be set.
+        </p>
+        <form onSubmit={saveEmail} className="mt-4 flex flex-wrap items-center gap-2">
+          <input
+            type="email"
+            value={alertEmail}
+            onChange={(e) => setEmailDraft(e.target.value)}
+            placeholder="you@example.com"
+            aria-label="Alert email address"
+            className="min-w-0 flex-1 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+          />
+          <button
+            type="submit"
+            className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10"
+          >
+            Save email
           </button>
         </form>
       </section>

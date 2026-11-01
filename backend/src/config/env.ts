@@ -53,6 +53,16 @@ export const env = {
     clientSecret: process.env.PAYPAL_CLIENT_SECRET ?? "",
   },
   agentServiceUrl: process.env.AGENT_SERVICE_URL ?? "http://localhost:8000",
+  // email alerts + daily digest (Resend) — off until RESEND_API_KEY is set
+  email: {
+    apiKey: process.env.RESEND_API_KEY ?? "",
+    from: process.env.EMAIL_FROM ?? "AgentCart <onboarding@resend.dev>",
+  },
+  // UTC hour (0..23) the daily digest goes out
+  digestHour: (() => {
+    const hour = Number(process.env.DIGEST_HOUR ?? 9);
+    return Number.isFinite(hour) ? Math.min(23, Math.max(0, Math.trunc(hour))) : 9;
+  })(),
   // Nano (XNO) settle leg — address is the seller's receive address; the
   // leg stays disabled (501) until it is set, like the PayPal routes
   nano: {

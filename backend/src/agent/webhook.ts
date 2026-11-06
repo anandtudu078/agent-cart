@@ -1,3 +1,4 @@
+import type { Types } from "mongoose";
 import { ActivityEvent, User } from "../models/index.js";
 import { isPublicHttpUrl } from "./url-guard.js";
 
@@ -90,22 +91,26 @@ export async function sendDropAlert(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.ok) return true;
-    await logWarn(`webhook alert rejected: http ${res.status}`);
+    await logWarn(`webhook alert rejected: http ${res.status}`, owner);
     return false;
   } catch (err) {
     await logWarn(
       `webhook alert failed: ${err instanceof Error ? err.message.slice(0, 120) : "unknown error"}`,
+      owner,
     );
     return false;
   }
 }
 
-async function logWarn(message: string): Promise<void> {
+// owner-scoped: without it the line is a system event every signed-in user
+// sees, and a delivery error can name the target endpoint
+async function logWarn(message: string, owner: unknown): Promise<void> {
   try {
     await ActivityEvent.create({
       level: "warn",
       message,
       source: "webhook",
+      owner: owner as Types.ObjectId | null | undefined,
     });
   } catch {
     // logging must never take down an alert delivery attempt

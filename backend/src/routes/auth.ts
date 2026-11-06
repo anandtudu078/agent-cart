@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -23,8 +24,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COOKIE = "agentcart_session";
 const SESSION_MS = 24 * 60 * 60 * 1000;
 
+// A real hash of a throwaway value: login compares against it when no account
+// matches, so response time does not reveal whether an email is registered.
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomUUID(), 12);
+
 function startSession(res: Response, userId: string) {
-  const token = jwt.sign({ sub: userId }, env.jwt.secret, { expiresIn: "1d" });
+  const token = jwt.sign({ sub: userId }, env.jwt.secret, {
+    expiresIn: "1d",
+    algorithm: "HS256",
+  });
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -78,8 +86,10 @@ authRouter.post("/login", authLimiter, async (req, res) => {
   }
 
   const user = await User.findOne({ email }).select("+passwordHash");
-  const ok = user && (await bcrypt.compare(password, user.passwordHash));
-  if (!ok) {
+  // exactly one bcrypt compare either way — skipping it for an unknown email
+  // would make "is this account registered?" answerable from timing
+  const matches = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user || !matches) {
     // one message for "no such user" and "wrong password" — don't leak which
     res.status(401).json({ error: "invalid email or password" });
     return;

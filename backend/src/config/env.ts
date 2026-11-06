@@ -22,7 +22,13 @@ function mongoUri(): string {
 
 function jwtSecret(): string {
   const secret = process.env.JWT_SECRET?.trim();
-  if (secret) return secret;
+  if (secret) {
+    // a short secret is brute-forceable offline from one captured cookie
+    if (nodeEnv === "production" && secret.length < 32) {
+      throw new Error("JWT_SECRET must be at least 32 characters in production");
+    }
+    return secret;
+  }
   if (nodeEnv === "production") {
     throw new Error("JWT_SECRET must be set in production");
   }

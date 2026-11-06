@@ -1,3 +1,4 @@
+import type { Types } from "mongoose";
 import { ActivityEvent, User } from "../models/index.js";
 import { env } from "../config/env.js";
 import type { DropAlert } from "./webhook.js";
@@ -90,14 +91,22 @@ export async function sendDropEmail(
   } catch (err) {
     await logWarn(
       `email failed: ${err instanceof Error ? err.message.slice(0, 120) : "unknown error"}`,
+      owner,
     );
     return false;
   }
 }
 
-async function logWarn(message: string): Promise<void> {
+// owner-scoped: delivery failures belong in the affected user's feed, not the
+// system feed every signed-in account can read
+async function logWarn(message: string, owner?: unknown): Promise<void> {
   try {
-    await ActivityEvent.create({ level: "warn", message, source: "email" });
+    await ActivityEvent.create({
+      level: "warn",
+      message,
+      source: "email",
+      owner: owner as Types.ObjectId | null | undefined,
+    });
   } catch {
     // logging must never take down an email delivery attempt
   }

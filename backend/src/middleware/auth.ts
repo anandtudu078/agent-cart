@@ -19,7 +19,8 @@ export function currentUserId(req: Request): string | null {
   const token = req.cookies?.[COOKIE];
   if (typeof token !== "string") return null;
   try {
-    const payload = jwt.verify(token, env.jwt.secret);
+    // pin the algorithm — a token must never be able to choose how it is verified
+    const payload = jwt.verify(token, env.jwt.secret, { algorithms: ["HS256"] });
     if (typeof payload === "string") return null;
     return typeof payload.sub === "string" ? payload.sub : null;
   } catch {

@@ -30,8 +30,9 @@ app.use(
     credentials: true,
   }),
 );
+// JSON only: nothing in the app posts form-encoded bodies, and dropping the
+// urlencoded parser removes the qs nesting/prototype surface entirely
 app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // --- Routes -----------------------------------------------------------------

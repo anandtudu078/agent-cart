@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "./api";
 
 export interface UserSettings {
-  currency: string;
   priceAlerts: boolean;
   /** Empty = in-app only; otherwise the agent POSTs drops to this URL. */
   webhookUrl: string;
@@ -17,7 +16,6 @@ export interface UserSettings {
 }
 
 const DEFAULTS: UserSettings = {
-  currency: "USD",
   priceAlerts: true,
   webhookUrl: "",
   alertEmail: "",
@@ -48,7 +46,7 @@ async function loadSettings(): Promise<UserSettings> {
   }
 }
 
-/** Shared user settings (currency, notification prefs) with a tiny cache. */
+/** Shared user settings (notifications, guardrails) with a tiny cache. */
 export function useSettings() {
   const [settings, setSettings] = useState<UserSettings>(cached ?? DEFAULTS);
   const [loading, setLoading] = useState(cached === null);
@@ -104,15 +102,14 @@ export function useSettings() {
   return { settings, loading, save, reset };
 }
 
-const SYMBOLS: Record<string, string> = {
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  INR: "₹",
-  JPY: "¥",
-};
-
-/** Format an amount with the user's currency symbol. */
-export function formatPrice(amount: number, currency = "USD"): string {
-  return `${SYMBOLS[currency] ?? "$"}${amount.toFixed(2)}`;
+/**
+ * Format an amount in USD — the only currency prices are stored and settled in
+ * (PayPal and the Nano leg both quote USD).
+ *
+ * shortcut: USD-only display; add a cached FX layer before exposing a currency
+ * picker again — a symbol swap without conversion shows a euro price that is
+ * really dollars.
+ */
+export function formatPrice(amount: number): string {
+  return `$${amount.toFixed(2)}`;
 }

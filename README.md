@@ -27,11 +27,11 @@ Built today:
 | API surface | ✅ watch-item CRUD + history routes |
 | Live prices | ✅ scan cycle fetches the product URL (JSON-LD / price meta) and marks each row `ok · stale · error · simulated` — a failed fetch keeps the last real price instead of inventing one |
 | Price history | ✅ `price_points` collection written once per observed price (90-day TTL) → `GET /api/watch-items/:id/series` feeds the chart |
-| Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit — set it in Settings; internal/localhost targets are rejected |
+| Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit and every back-in-stock — set it in Settings; internal/localhost targets are rejected |
 | Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
 | Natural-language commands | ✅ one input box on the watchlist — “watch Sony WH-1000XM5 now $328 under $300, auto-buy”, “pause Keychron K2”, “set target for Keychron K2 to $79” → `POST /api/agent/command`, parsed by the agent service (LLM when `OPENAI_API_KEY` is set, deterministic keyword fallback otherwise) and executed against the existing watch-item routes; every command lands in history + the activity feed |
 | Auto-buy guardrails | ✅ per-user safety net checked before every auto-buy reserve — a USD/day budget cap and a confirm-before-buy toggle, set in Settings; a held buy lands in History as `Auto-buy held` with the reason, and the row's cart button still reserves by hand |
-| Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
+| Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit or a restock immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
@@ -153,7 +153,7 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 - **price_points** — one row per observed price (`item`, `price`, `at`, `source live | agent-service | simulated`), auto-expire after 90 days; the chart reads these
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
-- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, plus any applied `couponCode` / `couponDiscount`. The Nano settle leg freezes its own quote on the row (`nanoAddress`, `nanoQuotedXno`, `nanoAmountRaw`, `nanoRate`, `nanoQuoteExpiresAt`) and records the confirmed `nanoBlockHash` once the ledger verifies it
+- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, a `capturedAt` once the payment settles (the daily auto-buy cap counts spend at capture time), plus any applied `couponCode` / `couponDiscount`. The Nano settle leg freezes its own quote on the row (`nanoAddress`, `nanoQuotedXno`, `nanoAmountRaw`, `nanoRate`, `nanoQuoteExpiresAt`) and records the confirmed `nanoBlockHash` once the ledger verifies it
 
 ## Security
 

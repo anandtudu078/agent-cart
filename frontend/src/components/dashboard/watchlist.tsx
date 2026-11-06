@@ -14,7 +14,7 @@ import { useWatchItems, type FetchStatus, type Trend } from "@/lib/use-watch-ite
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { CommandBar } from "./command-bar";
 import { PriceChart } from "./price-chart";
-import { formatPrice, useSettings } from "@/lib/use-settings";
+import { formatPrice } from "@/lib/use-settings";
 
 const FETCH_CHIPS: Record<FetchStatus, { label: string; className: string }> = {
   ok: { label: "live", className: "border-emerald-500/40 text-emerald-400" },
@@ -101,7 +101,6 @@ function TrendChip({ trend }: { trend: Trend }) {
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
   const { items, loading, add, remove, setItem, refresh } = useWatchItems();
-  const { settings } = useSettings();
   const cart = useCart();
   const [cartNotice, setCartNotice] = useState<string | null>(null);
   // id of the item whose price chart row is open (null = all collapsed)
@@ -170,7 +169,7 @@ export function Watchlist() {
                         .sort((a, b) => a.price - b.price)
                         .map(
                           (offer) =>
-                            `${offer.retailer} ${formatPrice(offer.price, settings.currency)}`,
+                            `${offer.retailer} ${formatPrice(offer.price)}`,
                         )
                         .join("  ·  ")}
                       className="rounded-full border border-cyan-500/40 px-1.5 py-0.5 text-[10px] text-cyan-400"
@@ -181,10 +180,10 @@ export function Watchlist() {
                 </span>
               </td>
               <td className="px-4 py-3 text-right font-mono">
-                {formatPrice(item.price, settings.currency)}
+                {formatPrice(item.price)}
               </td>
               <td className="px-4 py-3 text-right font-mono text-muted">
-                {formatPrice(item.target, settings.currency)}
+                {formatPrice(item.target)}
               </td>
               <td
                 className={`px-4 py-3 text-right font-mono ${

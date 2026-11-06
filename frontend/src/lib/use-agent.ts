@@ -72,30 +72,5 @@ export function useAgent() {
     }
   }, [refresh]);
 
-  /** Change the scan interval; returns an error message or null on success. */
-  const updateInterval = useCallback(
-    async (sec: number): Promise<string | null> => {
-      try {
-        const res = await fetch(`${API_BASE}/api/agent/settings`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ intervalSec: sec }),
-        });
-        if (!res.ok) {
-          const data = (await res.json().catch(() => null)) as {
-            error?: string;
-          } | null;
-          return data?.error ?? "could not update the interval";
-        }
-        refresh();
-        return null;
-      } catch {
-        return "Could not reach the API (http://localhost:4000)";
-      }
-    },
-    [refresh],
-  );
-
-  return { status, countdownSec, scanning, runNow, updateInterval, refresh };
+  return { status, countdownSec, scanning, runNow, refresh };
 }

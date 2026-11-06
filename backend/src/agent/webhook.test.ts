@@ -31,3 +31,9 @@ test("dropAlertMessage: a non-auto-buy drop never advertises checkout", () => {
   assert.doesNotMatch(text, /held in cart/);
   assert.doesNotMatch(text, /approve/);
 });
+
+test("dropAlertMessage: restock uses stock wording, not a price-drop arrow", () => {
+  const text = dropAlertMessage({ ...ALERT, kind: "restock", autoBuy: false });
+  assert.match(text, /back in stock at Amazon/);
+  assert.doesNotMatch(text, /→/);
+});

@@ -3,7 +3,7 @@ import { env } from "../config/env.js";
 import type { DropAlert } from "./webhook.js";
 
 /**
- * Out-of-app price-drop alerts over email, via the Resend REST API.
+ * Out-of-app price-drop and restock alerts over email, via the Resend API.
  *
  * Same contract as webhook.ts: fire-and-forget from the scan cycle, an
  * undeliverable email must never fail the cycle that found the drop. The
@@ -21,10 +21,15 @@ export function emailEnabled(): boolean {
 
 /** Render one drop as a plain-text email — exported so the body is testable. */
 export function dropEmailBody(alert: DropAlert): string {
+  const restock = alert.kind === "restock";
   const lines = [
-    `${alert.emoji} ${alert.title} hit your target price at ${alert.retailer}.`,
+    restock
+      ? `${alert.emoji} ${alert.title} is back in stock at ${alert.retailer}.`
+      : `${alert.emoji} ${alert.title} hit your target price at ${alert.retailer}.`,
     "",
-    `Price: $${alert.oldPrice.toFixed(2)} → $${alert.newPrice.toFixed(2)} (target $${alert.targetPrice.toFixed(2)})`,
+    restock
+      ? `Price: $${alert.newPrice.toFixed(2)} (target $${alert.targetPrice.toFixed(2)})`
+      : `Price: $${alert.oldPrice.toFixed(2)} → $${alert.newPrice.toFixed(2)} (target $${alert.targetPrice.toFixed(2)})`,
   ];
   if (alert.autoBuy) lines.push("The agent held it in your cart.");
   if (alert.approvalUrl) lines.push("", `Approve checkout in one tap: ${alert.approvalUrl}`);
@@ -77,11 +82,11 @@ export async function sendDropEmail(
     const user = await User.findById(owner).select("settings.alertEmail").lean();
     const to = user?.settings?.alertEmail;
     if (!to) return false; // no address saved → alerts stay in-app
-    return await sendEmail(
-      to,
-      `${alert.emoji} ${alert.title} is $${alert.newPrice.toFixed(2)} at ${alert.retailer}`,
-      dropEmailBody(alert),
-    );
+    const subject =
+      alert.kind === "restock"
+        ? `${alert.emoji} ${alert.title} is back in stock at ${alert.retailer}`
+        : `${alert.emoji} ${alert.title} is $${alert.newPrice.toFixed(2)} at ${alert.retailer}`;
+    return await sendEmail(to, subject, dropEmailBody(alert));
   } catch (err) {
     await logWarn(
       `email failed: ${err instanceof Error ? err.message.slice(0, 120) : "unknown error"}`,

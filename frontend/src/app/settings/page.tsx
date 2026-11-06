@@ -2,13 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Mail, ShieldCheck, Trash2, Wallet, Webhook } from "lucide-react";
+import { BellRing, Mail, ShieldCheck, Trash2, Webhook } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useSettings } from "@/lib/use-settings";
 
-const CURRENCIES = ["USD", "EUR", "GBP", "INR", "JPY"];
-
-/** Account settings: currency, price-drop notifications, delete account. */
+/** Account settings: notifications, alert targets, guardrails, delete account. */
 export default function SettingsPage() {
   const { settings, save } = useSettings();
   const [notice, setNotice] = useState<string | null>(null);
@@ -125,29 +123,6 @@ export default function SettingsPage() {
           {notice}
         </p>
       )}
-
-      {/* Currency */}
-      <section className="rounded-xl border border-panel-border bg-panel/60 p-6">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Wallet className="h-4 w-4 text-cyan-400" aria-hidden />
-          Currency
-        </h2>
-        <p className="mt-1 text-xs text-muted">
-          Used for prices shown on your watchlist.
-        </p>
-        <select
-          value={settings.currency}
-          onChange={(e) => void save({ currency: e.target.value })}
-          aria-label="Display currency"
-          className="mt-4 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
-        >
-          {CURRENCIES.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
-      </section>
 
       {/* Notifications */}
       <section className="rounded-xl border border-panel-border bg-panel/60 p-6">

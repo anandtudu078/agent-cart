@@ -23,15 +23,22 @@ export interface DropAlert {
   targetPrice: number;
   currency: string;
   autoBuy: boolean;
+  /** "restock" changes the wording and the webhook event name. */
+  kind?: "drop" | "restock";
   /** PayPal approval link when the order was pre-created at reserve time. */
   approvalUrl?: string;
 }
 
 function message(alert: DropAlert): string {
   const { emoji, title, retailer, oldPrice, newPrice, targetPrice } = alert;
+  const head =
+    alert.kind === "restock"
+      ? `${emoji} **${title}** is back in stock at ${retailer} — ` +
+        `$${newPrice.toFixed(2)} (target $${targetPrice.toFixed(2)})`
+      : `${emoji} **${title}** hit target at ${retailer} — ` +
+        `$${oldPrice.toFixed(2)} → $${newPrice.toFixed(2)} (target $${targetPrice.toFixed(2)})`;
   return (
-    `${emoji} **${title}** hit target at ${retailer} — ` +
-    `$${oldPrice.toFixed(2)} → $${newPrice.toFixed(2)} (target $${targetPrice.toFixed(2)})` +
+    head +
     (alert.autoBuy ? " · held in cart" : "") +
     // one tap from the alert to PayPal — only when an order exists
     (alert.approvalUrl ? `\napprove in one tap: ${alert.approvalUrl}` : "")
@@ -64,7 +71,7 @@ export async function sendDropAlert(
       body: JSON.stringify({
         content: text, // Discord
         text, // Slack
-        event: "price.drop",
+        event: alert.kind === "restock" ? "stock.restock" : "price.drop",
         item: {
           id: alert.itemId,
           title: alert.title,

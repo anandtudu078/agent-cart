@@ -335,6 +335,7 @@ cartRouter.post("/cart/:id/capture", async (req, res) => {
     );
 
     entry.status = "checked_out";
+    entry.capturedAt = new Date();
     await entry.save();
     await HistoryEntry.create({
       item: entry.watchItem,
@@ -515,6 +516,7 @@ cartRouter.post("/cart/:id/nano-verify", async (req, res) => {
   }
 
   entry.status = "checked_out";
+  entry.capturedAt = new Date();
   entry.nanoBlockHash = hash;
   await entry.save();
   await HistoryEntry.create({

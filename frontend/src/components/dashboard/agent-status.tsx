@@ -1,29 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import { Activity, Play } from "lucide-react";
 import { useAgent } from "@/lib/use-agent";
 
-const INTERVAL_OPTIONS = [
-  { sec: 15, label: "15s" },
-  { sec: 30, label: "30s" },
-  { sec: 60, label: "1m" },
-  { sec: 300, label: "5m" },
-];
-
 /**
- * Header badge: real countdown to the next scan cycle, a manual
- * "run now" button, and the scan-interval picker.
+ * Header badge: real countdown to the next scan cycle and a manual
+ * "run now" button. The loop cadence is deploy-time config
+ * (AGENT_INTERVAL_SEC); per-item poll intervals live on the watch item.
  */
 export function AgentStatusBadge() {
-  const { status, countdownSec, scanning, runNow, updateInterval } = useAgent();
-  const [intervalError, setIntervalError] = useState<string | null>(null);
-
-  async function changeInterval(sec: number) {
-    const err = await updateInterval(sec);
-    setIntervalError(err);
-    if (!err) window.setTimeout(() => setIntervalError(null), 4_000);
-  }
+  const { status, countdownSec, scanning, runNow } = useAgent();
 
   if (!status) {
     return (
@@ -34,13 +20,11 @@ export function AgentStatusBadge() {
     );
   }
 
-  const label = intervalError
-    ? intervalError
-    : status.running
-      ? "scanning…"
-      : countdownSec === null
-        ? "waiting for first cycle"
-        : `next cycle in ${countdownSec}s`;
+  const label = status.running
+    ? "scanning…"
+    : countdownSec === null
+      ? "waiting for first cycle"
+      : `next cycle in ${countdownSec}s`;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -48,21 +32,6 @@ export function AgentStatusBadge() {
         <Activity className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
         {label}
       </div>
-      <label className="flex items-center gap-1.5 rounded-full border border-panel-border bg-panel px-3 py-1.5 font-mono text-xs text-muted">
-        every
-        <select
-          value={status.intervalSec}
-          onChange={(e) => void changeInterval(Number(e.target.value))}
-          aria-label="Scan interval"
-          className="bg-transparent font-mono text-xs text-zinc-300 outline-none"
-        >
-          {INTERVAL_OPTIONS.map((option) => (
-            <option key={option.sec} value={option.sec} className="bg-panel">
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
       <button
         type="button"
         disabled={scanning || status.running}

@@ -25,7 +25,9 @@ export interface CycleSummary {
 }
 
 let running = false;
-let intervalSec = env.agent.intervalSec;
+// deploy-time cadence; per-item pollIntervalSec still controls how often a
+// single row is re-checked inside each cycle
+const intervalSec = env.agent.intervalSec;
 let loopTimer: ReturnType<typeof setInterval> | null = null;
 let lastCycleAt: Date | null = null;
 let lastSummary: CycleSummary | null = null;
@@ -42,23 +44,6 @@ export function agentState() {
     lastCycleAt: lastCycleAt?.toISOString() ?? null,
     lastSummary,
   };
-}
-
-/** Current scan interval in seconds (mutable via PATCH /api/agent/settings). */
-export function agentIntervalSec(): number {
-  return intervalSec;
-}
-
-/**
- * Change the scan interval at runtime and restart the timer. Clamped by the
- * caller; the loop only restarts when it was already started.
- */
-export function setAgentIntervalSec(sec: number): void {
-  intervalSec = sec;
-  if (loopTimer) {
-    clearInterval(loopTimer);
-    loopTimer = setInterval(tick, sec * 1000).unref();
-  }
 }
 
 async function log(
@@ -180,12 +165,27 @@ async function reserveIntoCart(
         .select("settings.confirmBeforeBuy settings.autoBuyDailyCap")
         .lean()
     : null;
+  // "today's spend" = purchases captured in the last 24h (by capture time, so
+  // a buy captured today counts even when it was reserved yesterday) plus
+  // reservations still held in the cart — a live hold is money the agent has
+  // already committed, while a released one is deleted and stops counting.
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
   const spentToday = item.owner
     ? await CartEntry.aggregate<{ total: number }>([
         {
           $match: {
             owner: item.owner,
-            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1_000) },
+            $or: [
+              { status: "checked_out", capturedAt: { $gte: since } },
+              // rows captured before `capturedAt` existed have no timestamp
+              // of their own — fall back to their last update
+              {
+                status: "checked_out",
+                capturedAt: { $exists: false },
+                updatedAt: { $gte: since },
+              },
+              { status: "reserved", createdAt: { $gte: since } },
+            ],
           },
         },
         { $group: { _id: null, total: { $sum: { $subtract: ["$price", "$couponDiscount"] } } } },
@@ -557,6 +557,8 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
         owner: item.owner,
       });
 
+      // filled in when auto-buy reserves below — a restock alert carries it
+      let approvalUrl: string | undefined;
       if (hitTarget && !wasDrop) {
         drops += 1;
         await HistoryEntry.create({
@@ -574,8 +576,6 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           true, // surfaced as a toast/desktop notification on the dashboard
           item.owner,
         );
-        // filled in when auto-buy reserves below — the alert carries it
-        let approvalUrl: string | undefined;
         if (item.autoBuy && item.inStock === false) {
           await HistoryEntry.create({
             item: item._id,
@@ -634,7 +634,29 @@ export async function runScanCycle(): Promise<CycleSummary | null> {
           inStock: item.inStock !== false,
         })
       ) {
-        await reserveIntoCart(item, nextPrice);
+        approvalUrl = await reserveIntoCart(item, nextPrice);
+      }
+
+      // same channels as a drop: a restock is just as time-sensitive when the
+      // item is still at/below target. Skipped when the drop branch above
+      // already alerted for this same cycle.
+      if (restocked && !(hitTarget && !wasDrop)) {
+        const restockAlert = {
+          itemId: item.id,
+          title: item.title,
+          retailer: item.retailer,
+          emoji: item.emoji,
+          url: item.url ?? undefined,
+          oldPrice,
+          newPrice: nextPrice,
+          targetPrice: item.targetPrice,
+          currency: item.currency,
+          autoBuy: item.autoBuy,
+          approvalUrl,
+          kind: "restock" as const,
+        };
+        void sendDropAlert(item.owner, restockAlert);
+        void sendDropEmail(item.owner, restockAlert);
       }
     }
 

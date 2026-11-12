@@ -13,6 +13,8 @@ export interface CartEntry {
   couponCode?: string | null;
   couponDiscount?: number;
   paypalOrderId?: string | null;
+  /** Why the guardrails held this auto-buy (only on held entries). */
+  holdReason?: string | null;
   /** Nano settle leg — present once a quote has been requested. */
   nanoAddress?: string | null;
   nanoQuotedXno?: string | null;
@@ -31,7 +33,8 @@ interface RawEntry {
   price: number;
   couponCode?: string;
   couponDiscount?: number;
-  status: "reserved" | "checked_out";
+  status: "held" | "reserved" | "checked_out";
+  holdReason?: string;
   paypalOrderId?: string;
   nanoAddress?: string;
   nanoQuotedXno?: string;
@@ -52,6 +55,7 @@ function mapEntry(raw: RawEntry): CartEntry {
     couponCode: raw.couponCode,
     couponDiscount: raw.couponDiscount ?? 0,
     paypalOrderId: raw.paypalOrderId,
+    holdReason: raw.holdReason,
     nanoAddress: raw.nanoAddress,
     nanoQuotedXno: raw.nanoQuotedXno,
     nanoAmountRaw: raw.nanoAmountRaw,
@@ -64,9 +68,10 @@ function mapEntry(raw: RawEntry): CartEntry {
 // shortcut: 15s polling like the other hooks — revisit with push updates
 const POLL_MS = 15_000;
 
-/** Reserved cart items + reserve/release/coupon/checkout mutations. */
+/** Reserved cart items + held auto-buys + reserve/release/checkout mutations. */
 export function useCart() {
   const [entries, setEntries] = useState<CartEntry[]>([]);
+  const [held, setHeld] = useState<CartEntry[]>([]);
   const [subtotal, setSubtotal] = useState(0);
   const [discount, setDiscount] = useState(0);
   const [total, setTotal] = useState(0);
@@ -77,17 +82,20 @@ export function useCart() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data: {
         entries?: RawEntry[];
+        held?: RawEntry[];
         subtotal?: number;
         discount?: number;
         total?: number;
       } | null) => {
         setEntries((data?.entries ?? []).map(mapEntry));
+        setHeld((data?.held ?? []).map(mapEntry));
         setSubtotal(data?.subtotal ?? 0);
         setDiscount(data?.discount ?? 0);
         setTotal(data?.total ?? 0);
       })
       .catch(() => {
         setEntries([]);
+        setHeld([]);
         setSubtotal(0);
         setDiscount(0);
         setTotal(0);
@@ -126,7 +134,30 @@ export function useCart() {
     [refresh],
   );
 
-  /** Release a reserved item. */
+  /** Approve a held auto-buy, turning it into a reserved cart item. */
+  const approve = useCallback(
+    async (id: string): Promise<string | null> => {
+      try {
+        const res = await fetch(`${API_BASE}/api/cart/${id}/approve`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          return data?.error ?? "Could not approve the held buy";
+        }
+        refresh();
+        return null;
+      } catch {
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
+  /** Release a reserved item (or dismiss a held one). */
   const remove = useCallback(
     async (id: string): Promise<boolean> => {
       try {
@@ -290,12 +321,14 @@ export function useCart() {
 
   return {
     entries,
+    held,
     subtotal,
     discount,
     total,
     loading,
     refresh,
     add,
+    approve,
     remove,
     applyCoupon,
     removeCoupon,

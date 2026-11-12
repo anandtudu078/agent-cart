@@ -5,6 +5,7 @@ import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { resolveProduct } from "../agent/fetch-price.js";
 import { isPublicHttpUrl } from "../agent/url-guard.js";
 import { trendFor, INSUFFICIENT, type Trend } from "../agent/trend.js";
+import { priceRangeFor, type PriceRange } from "../agent/range.js";
 import { bestOffer } from "../agent/cycle.js";
 
 export const watchItemsRouter = Router();
@@ -131,15 +132,21 @@ export function parseWatchInput(
 // and keeps the aggregation bounded no matter how long an item has run
 const TREND_POINTS = 60;
 
+interface HistorySignals {
+  trend: Trend;
+  range: PriceRange | null;
+}
+
 /**
- * One aggregation over price_points → trend per item, so the watchlist gets
- * a buy-now-or-wait badge without an N+1 query per row.
+ * One aggregation over price_points → trend + observed range per item, so
+ * the watchlist gets buy-now-or-wait and "is this cheap?" badges without an
+ * N+1 query per row.
  * `$topN` needs MongoDB 5.2+ (local mongo:7 / Atlas are both fine).
  */
-async function trendByItem(
+async function historyByItem(
   ids: readonly unknown[],
-): Promise<Map<string, Trend>> {
-  const map = new Map<string, Trend>();
+): Promise<Map<string, HistorySignals>> {
+  const map = new Map<string, HistorySignals>();
   if (ids.length === 0) return map;
 
   const rows = await PricePoint.aggregate<{ _id: unknown; prices: number[] }>([
@@ -154,7 +161,14 @@ async function trendByItem(
       },
     },
   ]);
-  for (const row of rows) map.set(String(row._id), trendFor(row.prices.reverse()));
+  for (const row of rows) {
+    const prices = row.prices.reverse(); // oldest first, for both helpers
+    const current = prices[prices.length - 1] ?? 0;
+    map.set(String(row._id), {
+      trend: trendFor(prices),
+      range: priceRangeFor(prices, current),
+    });
+  }
   return map;
 }
 
@@ -199,17 +213,22 @@ function parseOffers(raw: unknown): { offers?: OfferInput[]; error?: string } {
   return { offers };
 }
 
-/** GET /api/watch-items — full watchlist, newest first. */
+/** GET /api/watch-items — full watchlist, newest first. Each item carries its
+ * `trend` verdict and `range` (observed low/high) from its own price history. */
 watchItemsRouter.get("/watch-items", async (req, res) => {
   const items = await WatchItem.find(ownedByUser(req.userId!))
     .sort({ createdAt: -1 })
     .lean();
-  const trends = await trendByItem(items.map((item) => item._id));
+  const signals = await historyByItem(items.map((item) => item._id));
   res.json({
-    items: items.map((item) => ({
-      ...item,
-      trend: trends.get(String(item._id)) ?? INSUFFICIENT,
-    })),
+    items: items.map((item) => {
+      const signal = signals.get(String(item._id));
+      return {
+        ...item,
+        trend: signal?.trend ?? INSUFFICIENT,
+        range: signal?.range ?? null,
+      };
+    }),
   });
 });
 

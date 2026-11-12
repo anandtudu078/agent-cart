@@ -1,17 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Coins, Copy, CreditCard, ShoppingCart, Ticket, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Coins,
+  Copy,
+  CreditCard,
+  ShieldAlert,
+  ShoppingCart,
+  Ticket,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCart, type CartEntry } from "@/lib/use-cart";
 
 /** Reserved cart items with coupons + PayPal checkout, backed by /api/cart. */
 export function CartSection() {
   const {
     entries,
+    held,
     subtotal,
     discount,
     total,
     loading,
+    approve,
     remove,
     applyCoupon,
     removeCoupon,
@@ -132,6 +144,16 @@ export function CartSection() {
     setNotice(ok ? "Coupon removed." : "Could not remove the coupon.");
   }
 
+  async function runApprove(id: string) {
+    setBusyId(id);
+    setNotice(null);
+    const error = await approve(id);
+    setBusyId(null);
+    setNotice(
+      error ?? "Held buy approved — it is now reserved and ready for checkout.",
+    );
+  }
+
   async function runCapture(id: string) {
     setBusyId(id);
     setNotice(null);
@@ -148,7 +170,7 @@ export function CartSection() {
     );
   }
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && held.length === 0) {
     return (
       <div className="flex flex-col items-start gap-1 rounded-xl border border-panel-border bg-panel/60 p-8 text-center">
         <p className="font-mono text-sm text-muted">
@@ -160,13 +182,64 @@ export function CartSection() {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
-      {notice && (
-        <p className="border-b border-panel-border px-4 py-2 text-xs text-amber-400">
-          {notice}
-        </p>
+    <>
+      {notice && <p className="mb-2 text-xs text-amber-400">{notice}</p>}
+      {held.length > 0 && (
+        <div className="mb-3 overflow-hidden rounded-xl border border-amber-500/30 bg-amber-500/[0.04]">
+          <div className="flex flex-wrap items-center gap-2 border-b border-amber-500/20 px-4 py-2.5">
+            <ShieldAlert className="h-4 w-4 text-amber-400" aria-hidden />
+            <p className="text-sm font-medium text-amber-300">
+              Waiting for approval
+            </p>
+            <span className="font-mono text-[11px] text-amber-400/80">
+              {held.length} auto-buy{held.length === 1 ? "" : "s"} held by your
+              guardrails
+            </span>
+          </div>
+          <ul>
+            {held.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-center gap-3 border-b border-amber-500/10 px-4 py-3 last:border-0"
+              >
+                <span aria-hidden>{entry.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-zinc-200">
+                    {entry.itemTitle}
+                  </p>
+                  <p className="text-[11px] text-amber-400/80">
+                    {entry.holdReason ?? "held by your guardrails"}
+                  </p>
+                </div>
+                <span className="font-mono text-sm text-zinc-200">
+                  ${(entry.price - (entry.couponDiscount ?? 0)).toFixed(2)}
+                </span>
+                <button
+                  type="button"
+                  disabled={busyId === entry.id}
+                  onClick={() => void runApprove(entry.id)}
+                  className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                >
+                  <Check className="h-3 w-3" aria-hidden />
+                  {busyId === entry.id ? "working…" : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Dismiss held buy for ${entry.itemTitle}`}
+                  disabled={busyId === entry.id}
+                  onClick={() => void remove(entry.id)}
+                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      <ul>
+      {entries.length > 0 && (
+        <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
+          <ul>
         {entries.map((entry) => (
           <li
             key={entry.id}
@@ -382,27 +455,29 @@ export function CartSection() {
             )}
           </li>
         ))}
-      </ul>
-      <div className="flex flex-col gap-1 border-t border-panel-border px-4 py-3">
-        <div className="flex items-center justify-between text-xs text-muted">
-          <span>
-            {entries.length} item{entries.length === 1 ? "" : "s"} reserved
-          </span>
-          <span className="font-mono">
-            subtotal ${subtotal.toFixed(2)}
-          </span>
-        </div>
-        {discount > 0 && (
-          <div className="flex items-center justify-between font-mono text-xs text-emerald-400">
-            <span>coupons</span>
-            <span>−${discount.toFixed(2)}</span>
+          </ul>
+          <div className="flex flex-col gap-1 border-t border-panel-border px-4 py-3">
+            <div className="flex items-center justify-between text-xs text-muted">
+              <span>
+                {entries.length} item{entries.length === 1 ? "" : "s"} reserved
+              </span>
+              <span className="font-mono">
+                subtotal ${subtotal.toFixed(2)}
+              </span>
+            </div>
+            {discount > 0 && (
+              <div className="flex items-center justify-between font-mono text-xs text-emerald-400">
+                <span>coupons</span>
+                <span>−${discount.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between font-mono text-sm text-zinc-200">
+              <span>total</span>
+              <span>${total.toFixed(2)}</span>
+            </div>
           </div>
-        )}
-        <div className="flex items-center justify-between font-mono text-sm text-zinc-200">
-          <span>total</span>
-          <span>${total.toFixed(2)}</span>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

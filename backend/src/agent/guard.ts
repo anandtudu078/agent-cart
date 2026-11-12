@@ -6,6 +6,18 @@
  * answer "may this reserve happen, and if not, why".
  */
 
+/**
+ * How long a guardrail-held auto-buy stays approvable. The price was frozen
+ * when the drop was detected; a day is long enough to act on it and short
+ * enough that a stale quote can't be approved weeks later.
+ */
+export const HELD_BUY_TTL_MS = 24 * 60 * 60 * 1_000;
+
+/** Deadline for a hold created at `now` (defaults to the current time). */
+export function heldBuyExpiresAt(now: Date = new Date()): Date {
+  return new Date(now.getTime() + HELD_BUY_TTL_MS);
+}
+
 export interface GuardInput {
   /** User setting: hold every auto-buy for a manual confirmation. */
   confirmBeforeBuy: boolean;

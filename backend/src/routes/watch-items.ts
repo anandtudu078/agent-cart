@@ -240,6 +240,8 @@ watchItemsRouter.get("/watch-items", async (req, res) => {
       const signal = signals.get(String(item._id));
       return {
         ...item,
+        // older rows predate offers[]; lean() does not apply schema defaults
+        offers: item.offers ?? [],
         trend: signal?.trend ?? INSUFFICIENT,
         range: signal?.range ?? null,
       };

@@ -31,8 +31,11 @@ Built today:
 | Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
 | Natural-language commands | ✅ one input box on the watchlist — “watch Sony WH-1000XM5 now $328 under $300, auto-buy”, “pause Keychron K2”, “set target for Keychron K2 to $79” → `POST /api/agent/command`, parsed by the agent service (LLM when `OPENAI_API_KEY` is set, deterministic keyword fallback otherwise) and executed against the existing watch-item routes; every command lands in history + the activity feed |
 | Auto-buy guardrails | ✅ per-user safety net checked before every auto-buy reserve — a USD/day budget cap and a confirm-before-buy toggle, set in Settings; a held buy lands in History as `Auto-buy held` **and in the cart's Waiting-for-approval queue**, where one click reserves it at the price the agent saw (or dismisses it); the hold expires after 24h so a stale frozen price can never be approved later |
-| Price floor signal | ✅ every watch row carries a `range` from its recent price history (low/high over the last 60 observed points) → an `at low` / `+N% over low` chip beside the trend, so “is this actually cheap?” is answerable without opening the chart |
+| Watchlist tools | ✅ one toolbar for search (title or retailer), status filter, sorting (newest, price, closest to target, 24h drop), and bulk pause / resume / delete on the selected rows |
+| CSV export | ✅ `GET /api/export/watchlist` and `GET /api/export/prices` download the watchlist or the retained price history; cells that look like spreadsheet formulas — including after leading whitespace — are defused |
+| Price floor signal | ✅ every watch row carries a `range` from its full retained price history (low/high over every stored point, while the trend still uses the newest 60) → an `at low` / `+N% over low` chip beside the trend, so “is this actually cheap?” is answerable without opening the chart |
 | Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit or a restock immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
+| Quiet hours | ✅ per-user UTC window set in Settings — immediate webhook and email alerts are skipped inside it, while in-app activity and the daily digest keep running |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture
@@ -121,11 +124,13 @@ returns 401.
 - `GET /api/health` — liveness + database state
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
-- `GET /api/watch-items` — full watchlist, newest first; each row carries a `trend` verdict (`rising | falling | flat | insufficient`) and a `range` (`{low, high, points, aboveLowPct}`, null under 4 observed points) computed from its own price history — the buy-now-or-wait and price-floor signals behind the Status-column badges
+- `GET /api/watch-items` — full watchlist, newest first; each row carries a `trend` verdict (`rising | falling | flat | insufficient`) and a `range` (`{low, high, points, aboveLowPct}`, null under 4 observed points) computed from its own price history — the trend from the newest 60 points, the range from every retained point — the buy-now-or-wait and price-floor signals behind the Status-column badges
 - `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?, offers?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle. `offers` is an optional array of `{retailer, price, url?}` (max 5) for the same product: the agent polls every offer and the headline `retailer`/`price`/`url` always mirror the cheapest one, so the chart, cart and webhook need no extra input
 - `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
 - `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, `pollIntervalSec`, or replace `offers` (which re-picks the cheapest headline)
 - `DELETE /api/watch-items/:id` — stop watching
+- `GET /api/export/watchlist` — the user's watchlist as a CSV download (`text/csv`, fields: title, retailer, price, target, status, auto-buy, offers, fetch status, stock, url, timestamps)
+- `GET /api/export/prices` — the newest 10,000 retained price points as CSV (item, item id, observed at, price, source), newest first
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
 - `POST /api/agent/command` — run one plain-language command `{text}` (max 500 chars): `watch … under $X`, `pause|resume <item>`, `set target for <item> to $X`, `auto-buy <item>`. The body is parsed by the agent service against your own watchlist (for title matching), re-validated server-side, then executed — creating or patching the watch item and recording a `history` entry + activity line. Answers `{action, reply, item?}`; 422 carries the agent's `reply` when it didn't understand, 503 when the agent service is unreachable
@@ -175,6 +180,19 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
   as public `http(s)` hosts (`backend/src/agent/url-guard.ts`) — no
   `localhost`, RFC1918, link-local/metadata addresses, or non-http schemes,
   checked both when saved and again before every request.
+- CSV exports are scoped to the signed-in user and served `Cache-Control:
+  no-store`; values are quoted, and anything a spreadsheet could read as a
+  formula (including after leading whitespace) is prefixed with an apostrophe,
+  so a product title or URL cannot execute when the file is opened.
+- Dependency audit: `npm audit` reports **0 vulnerabilities** in both the
+  backend and frontend. The backend now runs `body-parser` 2.4.0 and
+  `mongoose` 9.12.1 for the recent DoS / filter / prototype advisories; the
+  dev-only ESLint toolchain is pinned to the patched `minimatch` 11.x line via
+  a scoped npm override (lint and build both verified).
+- **Residual risk:** `agent-service` dependencies are unpinned (`>=`) and are
+  not covered by the npm audit — run `pip-audit` in its virtualenv before
+  deploying. Export reads are authenticated but not separately rate-limited;
+  the price export is capped at the newest 10,000 points.
 - In development the JWT secret is random per boot (logging out on restart);
   production requires `JWT_SECRET`.
 - **Operational note:** if the Atlas password was ever printed to a dev log

@@ -5,7 +5,7 @@ import { isOwnedBy, ownedByUser } from "../middleware/auth.js";
 import { resolveProduct } from "../agent/fetch-price.js";
 import { isPublicHttpUrl } from "../agent/url-guard.js";
 import { trendFor, INSUFFICIENT, type Trend } from "../agent/trend.js";
-import { priceRangeFor, type PriceRange } from "../agent/range.js";
+import { priceRangeFrom, type PriceRange } from "../agent/range.js";
 import { bestOffer } from "../agent/cycle.js";
 
 export const watchItemsRouter = Router();
@@ -140,7 +140,8 @@ interface HistorySignals {
 /**
  * One aggregation over price_points → trend + observed range per item, so
  * the watchlist gets buy-now-or-wait and "is this cheap?" badges without an
- * N+1 query per row.
+ * N+1 query per row. The trend looks at the newest TREND_POINTS scans; the
+ * range covers every retained point, so a low from last month still counts.
  * `$topN` needs MongoDB 5.2+ (local mongo:7 / Atlas are both fine).
  */
 async function historyByItem(
@@ -149,8 +150,15 @@ async function historyByItem(
   const map = new Map<string, HistorySignals>();
   if (ids.length === 0) return map;
 
-  const rows = await PricePoint.aggregate<{ _id: unknown; prices: number[] }>([
-    { $match: { item: { $in: ids } } },
+  const rows = await PricePoint.aggregate<{
+    _id: unknown;
+    prices: number[];
+    low: number;
+    high: number;
+    count: number;
+  }>([
+    // unusable points must not drag the all-time low to 0
+    { $match: { item: { $in: ids }, price: { $gt: 0 } } },
     {
       $group: {
         _id: "$item",
@@ -158,6 +166,10 @@ async function historyByItem(
         prices: {
           $topN: { n: TREND_POINTS, output: "$price", sortBy: { at: -1 } },
         },
+        // all retained points, not just the trend window
+        low: { $min: "$price" },
+        high: { $max: "$price" },
+        count: { $sum: 1 },
       },
     },
   ]);
@@ -166,7 +178,10 @@ async function historyByItem(
     const current = prices[prices.length - 1] ?? 0;
     map.set(String(row._id), {
       trend: trendFor(prices),
-      range: priceRangeFor(prices, current),
+      range: priceRangeFrom(
+        { low: row.low, high: row.high, points: row.count },
+        current,
+      ),
     });
   }
   return map;

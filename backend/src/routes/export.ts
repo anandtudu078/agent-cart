@@ -46,7 +46,8 @@ exportRouter.get("/export/watchlist", async (req, res) => {
       item.currency,
       item.status,
       item.autoBuy,
-      item.offers.length,
+      // older rows predate offers[]; lean() does not apply schema defaults
+      item.offers?.length ?? 0,
       item.fetchStatus,
       item.inStock,
       item.url ?? "",

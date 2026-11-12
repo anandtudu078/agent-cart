@@ -23,6 +23,11 @@ test("csvCell: formula-looking strings are defused", () => {
   assert.equal(csvCell("=HYPERLINK(\"http://evil\")"), `"'=HYPERLINK(""http://evil"")"`);
   assert.equal(csvCell("+1+1"), "'+1+1");
   assert.equal(csvCell("@SUM(A1)"), "'@SUM(A1)");
+  // spreadsheet parsers ignore leading whitespace before the formula
+  assert.equal(csvCell("  =1+1"), "'  =1+1");
+  assert.equal(csvCell("\t=cmd"), "'\t=cmd");
+  // a newline also forces quoting, after the apostrophe is added
+  assert.equal(csvCell("\n@SUM(A1)"), `"'\n@SUM(A1)"`);
 });
 
 test("toCsv: header plus CRLF rows and a trailing newline", () => {

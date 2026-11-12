@@ -9,7 +9,8 @@ type Cell = string | number | boolean | null | undefined;
 
 export function csvCell(value: Cell): string {
   let text = value === null || value === undefined ? "" : String(value);
-  if (typeof value === "string" && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  // leading whitespace is ignored by spreadsheet parsers, so check past it
+  if (typeof value === "string" && /^\s*[=+\-@]/.test(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 

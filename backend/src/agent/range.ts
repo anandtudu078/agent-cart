@@ -1,13 +1,14 @@
 /**
  * Observed price range for one item — the "is this actually cheap?" signal
- * beside the short-term trend. Pure function; the watchlist route feeds it
- * the same 60 points it already loads for the trend.
+ * beside the short-term trend. The watchlist route feeds it the true low,
+ * high, and point count over every retained price point, while the trend
+ * still looks at only the newest window.
  */
 
 export interface PriceRange {
-  /** Lowest price seen in the observed window (and the current price). */
+  /** Lowest price ever observed (and the current price). */
   low: number;
-  /** Highest price seen in the observed window (and the current price). */
+  /** Highest price ever observed (and the current price). */
   high: number;
   /** How many observed points the range covers. */
   points: number;
@@ -15,29 +16,33 @@ export interface PriceRange {
   aboveLowPct: number;
 }
 
+export interface ObservedRange {
+  low: number;
+  high: number;
+  points: number;
+}
+
 // same bar as the trend signal: four scans is the least that deserves a badge
 const MIN_POINTS = 4;
 
 /**
- * Range for `current` over `prices` (oldest first).
+ * Range for `current` over the observed low/high.
  * Returns null until there is enough history to say anything honest.
- *
- * shortcut: the window is whatever series the caller passes (the watchlist
- * uses its last 60 points). A true all-time low needs a $min aggregation
- * over the whole collection — upgrade if the 60-point floor misleads.
  */
-export function priceRangeFor(
-  prices: readonly number[],
+export function priceRangeFrom(
+  observed: ObservedRange,
   current: number,
 ): PriceRange | null {
   if (!Number.isFinite(current) || current <= 0) return null;
-  const pts = prices.filter((p) => Number.isFinite(p) && p > 0);
-  if (pts.length < MIN_POINTS) return null;
+  if (!Number.isFinite(observed.low) || observed.low <= 0) return null;
+  if (!Number.isFinite(observed.high) || observed.high <= 0) return null;
+  if (!Number.isFinite(observed.points) || observed.points < MIN_POINTS) {
+    return null;
+  }
 
   // include the live price so a manual target/price edit can't read negative
-  const low = Math.min(...pts, current);
-  const high = Math.max(...pts, current);
-  const aboveLowPct =
-    Math.round(((current - low) / low) * 1000) / 10;
-  return { low, high, points: pts.length, aboveLowPct };
+  const low = Math.min(observed.low, current);
+  const high = Math.max(observed.high, current);
+  const aboveLowPct = Math.round(((current - low) / low) * 1000) / 10;
+  return { low, high, points: observed.points, aboveLowPct };
 }

@@ -122,6 +122,9 @@ authRouter.patch("/settings", async (req, res) => {
     alertEmail?: unknown;
     autoBuyDailyCap?: unknown;
     confirmBeforeBuy?: unknown;
+    quietHoursEnabled?: unknown;
+    quietHoursStart?: unknown;
+    quietHoursEnd?: unknown;
   };
 
   const patch: {
@@ -131,6 +134,9 @@ authRouter.patch("/settings", async (req, res) => {
     alertEmail?: string;
     autoBuyDailyCap?: number;
     confirmBeforeBuy?: boolean;
+    quietHoursEnabled?: boolean;
+    quietHoursStart?: number;
+    quietHoursEnd?: number;
   } = {};
   if (body.currency !== undefined) {
     if (
@@ -186,6 +192,27 @@ authRouter.patch("/settings", async (req, res) => {
     }
     patch.confirmBeforeBuy = body.confirmBeforeBuy;
   }
+  if (body.quietHoursEnabled !== undefined) {
+    if (typeof body.quietHoursEnabled !== "boolean") {
+      res.status(400).json({ error: "quietHoursEnabled must be a boolean" });
+      return;
+    }
+    patch.quietHoursEnabled = body.quietHoursEnabled;
+  }
+  for (const field of ["quietHoursStart", "quietHoursEnd"] as const) {
+    const value = body[field];
+    if (value === undefined) continue;
+    if (
+      typeof value !== "number" ||
+      !Number.isInteger(value) ||
+      value < 0 ||
+      value > 23
+    ) {
+      res.status(400).json({ error: `${field} must be an hour from 0 to 23 (UTC)` });
+      return;
+    }
+    patch[field] = value;
+  }
 
   // dotted paths: the fields live under the `settings` subdocument, and a
   // flat $set would silently match nothing
@@ -200,6 +227,12 @@ authRouter.patch("/settings", async (req, res) => {
     setOps["settings.autoBuyDailyCap"] = patch.autoBuyDailyCap;
   if (patch.confirmBeforeBuy !== undefined)
     setOps["settings.confirmBeforeBuy"] = patch.confirmBeforeBuy;
+  if (patch.quietHoursEnabled !== undefined)
+    setOps["settings.quietHoursEnabled"] = patch.quietHoursEnabled;
+  if (patch.quietHoursStart !== undefined)
+    setOps["settings.quietHoursStart"] = patch.quietHoursStart;
+  if (patch.quietHoursEnd !== undefined)
+    setOps["settings.quietHoursEnd"] = patch.quietHoursEnd;
 
   const user = await User.findByIdAndUpdate(
     userId,

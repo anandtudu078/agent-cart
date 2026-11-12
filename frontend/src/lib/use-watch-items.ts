@@ -207,6 +207,61 @@ export function useWatchItems() {
     [refresh],
   );
 
+  /** PATCH many items at once (bulk pause/resume); error message or null. */
+  const setMany = useCallback(
+    async (
+      ids: string[],
+      patch: { status?: WatchStatus },
+    ): Promise<string | null> => {
+      try {
+        const results = await Promise.all(
+          ids.map((id) =>
+            fetch(`${API_BASE}/api/watch-items/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify(patch),
+            }).then((res) => res.ok),
+          ),
+        );
+        refresh();
+        const failed = results.filter((ok) => !ok).length;
+        return failed
+          ? `${failed} item${failed === 1 ? "" : "s"} could not be updated`
+          : null;
+      } catch {
+        refresh();
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
+  /** DELETE many items at once; error message or null. */
+  const removeMany = useCallback(
+    async (ids: string[]): Promise<string | null> => {
+      try {
+        const results = await Promise.all(
+          ids.map((id) =>
+            fetch(`${API_BASE}/api/watch-items/${id}`, {
+              method: "DELETE",
+              credentials: "include",
+            }).then((res) => res.ok),
+          ),
+        );
+        refresh();
+        const failed = results.filter((ok) => !ok).length;
+        return failed
+          ? `${failed} item${failed === 1 ? "" : "s"} could not be removed`
+          : null;
+      } catch {
+        refresh();
+        return "Could not reach the API (http://localhost:4000)";
+      }
+    },
+    [refresh],
+  );
+
   /** DELETE a watch item; returns true on success. */
   const remove = useCallback(
     async (id: string): Promise<boolean> => {
@@ -227,5 +282,5 @@ export function useWatchItems() {
     [],
   );
 
-  return { items, loading, refresh, add, remove, setItem };
+  return { items, loading, refresh, add, remove, setItem, setMany, removeMany };
 }

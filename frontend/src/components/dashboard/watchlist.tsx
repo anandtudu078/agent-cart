@@ -5,6 +5,7 @@ import {
   LineChart as ChartIcon,
   Pause,
   Play,
+  Search,
   ShoppingCart,
   Trash2,
   Zap,
@@ -125,11 +126,21 @@ function RangeChip({ range }: { range: PriceRange | null }) {
 
 /** Watchlist table backed by GET /api/watch-items (replaces mock data). */
 export function Watchlist() {
-  const { items, loading, add, remove, setItem, refresh } = useWatchItems();
+  const { items, loading, add, remove, setItem, setMany, removeMany, refresh } =
+    useWatchItems();
   const cart = useCart();
   const [cartNotice, setCartNotice] = useState<string | null>(null);
   // id of the item whose price chart row is open (null = all collapsed)
   const [chartId, setChartId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "watching" | "drop" | "paused"
+  >("all");
+  const [sortBy, setSortBy] = useState<
+    "recent" | "price-asc" | "price-desc" | "target-gap" | "drop"
+  >("recent");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkNotice, setBulkNotice] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -151,6 +162,77 @@ export function Watchlist() {
     );
   }
 
+  const needle = query.trim().toLowerCase();
+  const visible = items
+    .filter((item) => statusFilter === "all" || item.status === statusFilter)
+    .filter(
+      (item) =>
+        !needle ||
+        item.title.toLowerCase().includes(needle) ||
+        item.retailer.toLowerCase().includes(needle),
+    );
+  // filter() already returned a fresh array, so sorting in place is safe
+  if (sortBy === "price-asc") visible.sort((a, b) => a.price - b.price);
+  if (sortBy === "price-desc") visible.sort((a, b) => b.price - a.price);
+  if (sortBy === "target-gap")
+    visible.sort((a, b) => a.price - a.target - (b.price - b.target));
+  if (sortBy === "drop") visible.sort((a, b) => a.deltaPct - b.deltaPct);
+
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((item) => selected.has(item.id));
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visible.forEach((item) => next.delete(item.id));
+      else visible.forEach((item) => next.add(item.id));
+      return next;
+    });
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function resetView() {
+    setQuery("");
+    setStatusFilter("all");
+    setSortBy("recent");
+  }
+
+  async function runBulk(action: "watching" | "paused" | "delete") {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (
+      action === "delete" &&
+      !window.confirm(
+        `Stop watching ${ids.length} item${ids.length === 1 ? "" : "s"}?`,
+      )
+    ) {
+      return;
+    }
+    setBulkNotice(null);
+    const error =
+      action === "delete"
+        ? await removeMany(ids)
+        : await setMany(ids, { status: action });
+    if (error) {
+      setBulkNotice(error);
+      return;
+    }
+    setSelected(new Set());
+    setBulkNotice(
+      action === "delete"
+        ? `removed ${ids.length} item${ids.length === 1 ? "" : "s"}`
+        : `updated ${ids.length} item${ids.length === 1 ? "" : "s"}`,
+    );
+  }
+
   return (
     <>
       <CommandBar onExecuted={refresh} />
@@ -158,10 +240,119 @@ export function Watchlist() {
       {cartNotice && (
         <p className="mb-2 text-xs text-amber-400">{cartNotice}</p>
       )}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="relative min-w-44 flex-1">
+          <Search
+            className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="search title or retailer"
+            aria-label="Search watchlist"
+            className="w-full rounded-md border border-panel-border bg-[#0c0c12] py-2 pl-8 pr-3 text-sm text-zinc-200 placeholder:text-muted focus:border-cyan-500/50 focus:outline-none"
+          />
+        </label>
+        <select
+          value={statusFilter}
+          onChange={(event) =>
+            setStatusFilter(event.target.value as typeof statusFilter)
+          }
+          aria-label="Filter by status"
+          className="rounded-md border border-panel-border bg-[#0c0c12] px-2 py-2 text-xs text-zinc-200 focus:border-cyan-500/50 focus:outline-none"
+        >
+          <option value="all">all statuses</option>
+          <option value="watching">watching</option>
+          <option value="drop">drop found</option>
+          <option value="paused">paused</option>
+        </select>
+        <select
+          value={sortBy}
+          onChange={(event) => setSortBy(event.target.value as typeof sortBy)}
+          aria-label="Sort watchlist"
+          className="rounded-md border border-panel-border bg-[#0c0c12] px-2 py-2 text-xs text-zinc-200 focus:border-cyan-500/50 focus:outline-none"
+        >
+          <option value="recent">newest first</option>
+          <option value="price-asc">price: low → high</option>
+          <option value="price-desc">price: high → low</option>
+          <option value="target-gap">closest to target</option>
+          <option value="drop">biggest 24h drop</option>
+        </select>
+        {(query !== "" || statusFilter !== "all" || sortBy !== "recent") && (
+          <button
+            type="button"
+            onClick={resetView}
+            className="rounded-md border border-panel-border px-2 py-2 text-xs text-muted transition-colors hover:text-zinc-200"
+          >
+            reset
+          </button>
+        )}
+      </div>
+      {bulkNotice && (
+        <p className="mb-2 text-xs text-cyan-400">{bulkNotice}</p>
+      )}
+      {selected.size > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-500/[0.06] px-3 py-2 text-xs">
+          <span className="font-mono text-cyan-300">
+            {selected.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => void runBulk("watching")}
+            className="rounded border border-panel-border px-2 py-1 text-zinc-300 transition-colors hover:bg-white/5"
+          >
+            resume
+          </button>
+          <button
+            type="button"
+            onClick={() => void runBulk("paused")}
+            className="rounded border border-panel-border px-2 py-1 text-zinc-300 transition-colors hover:bg-white/5"
+          >
+            pause
+          </button>
+          <button
+            type="button"
+            onClick={() => void runBulk("delete")}
+            className="rounded border border-red-500/40 px-2 py-1 text-red-400 transition-colors hover:bg-red-500/10"
+          >
+            delete
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="ml-auto text-muted transition-colors hover:text-zinc-200"
+          >
+            clear
+          </button>
+        </div>
+      )}
       <div className="overflow-hidden rounded-xl border border-panel-border bg-panel/60">
+      {visible.length === 0 ? (
+        <div className="p-8 text-center font-mono text-sm text-muted">
+          no items match these filters —{" "}
+          <button
+            type="button"
+            onClick={resetView}
+            className="text-cyan-400 underline-offset-2 hover:underline"
+          >
+            reset them
+          </button>
+        </div>
+      ) : (
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-panel-border text-left text-[11px] uppercase tracking-wider text-muted">
+            <th className="w-10 px-4 py-3 font-medium">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleAllVisible}
+                aria-label="Select all visible items"
+                className="h-3.5 w-3.5 accent-cyan-500"
+              />
+            </th>
             <th className="px-4 py-3 font-medium">Item</th>
             <th className="px-4 py-3 font-medium">Retailer</th>
             <th className="px-4 py-3 text-right font-medium">Price</th>
@@ -173,11 +364,20 @@ export function Watchlist() {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {visible.map((item) => (
             <Fragment key={item.id}>
             <tr
               className="border-b border-panel-border/60 transition-colors hover:bg-white/[0.03]"
             >
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.id)}
+                  onChange={() => toggleSelected(item.id)}
+                  aria-label={`Select ${item.title}`}
+                  className="h-3.5 w-3.5 accent-cyan-500"
+                />
+              </td>
               <td className="px-4 py-3">
                 <span className="flex items-center gap-2.5">
                   <span aria-hidden>{item.emoji}</span>
@@ -318,7 +518,7 @@ export function Watchlist() {
             </tr>
             {chartId === item.id && (
               <tr className="border-b border-panel-border/60 last:border-0">
-                <td colSpan={8} className="px-4 py-3">
+                <td colSpan={9} className="px-4 py-3">
                   <PriceChart itemId={item.id} title={item.title} target={item.target} />
                 </td>
               </tr>
@@ -327,6 +527,7 @@ export function Watchlist() {
           ))}
         </tbody>
       </table>
+      )}
       </div>
     </>
   );

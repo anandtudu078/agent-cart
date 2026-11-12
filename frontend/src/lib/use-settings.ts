@@ -13,6 +13,12 @@ export interface UserSettings {
   autoBuyDailyCap: number;
   /** Hold every auto-buy until the user confirms it manually. */
   confirmBeforeBuy: boolean;
+  /** Suppress immediate webhook/email alerts inside a UTC window. */
+  quietHoursEnabled: boolean;
+  /** Inclusive start hour, 0–23 UTC. */
+  quietHoursStart: number;
+  /** Exclusive end hour, 0–23 UTC; may wrap past midnight. */
+  quietHoursEnd: number;
 }
 
 const DEFAULTS: UserSettings = {
@@ -21,6 +27,9 @@ const DEFAULTS: UserSettings = {
   alertEmail: "",
   autoBuyDailyCap: 0,
   confirmBeforeBuy: false,
+  quietHoursEnabled: false,
+  quietHoursStart: 22,
+  quietHoursEnd: 7,
 };
 
 // shortcut: module-level cache so the sidebar, watchlist, and toasts share

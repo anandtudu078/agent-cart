@@ -1,6 +1,7 @@
 import { ActivityEvent, User } from "../models/index.js";
 import { env } from "../config/env.js";
 import type { DropAlert } from "./webhook.js";
+import { inQuietHours } from "./quiet.js";
 
 /**
  * Out-of-app price-drop and restock alerts over email, via the Resend API.
@@ -79,9 +80,24 @@ export async function sendDropEmail(
 ): Promise<boolean> {
   try {
     if (!owner || !emailEnabled()) return false;
-    const user = await User.findById(owner).select("settings.alertEmail").lean();
-    const to = user?.settings?.alertEmail;
+    const user = await User.findById(owner)
+      .select(
+        "settings.alertEmail settings.quietHoursEnabled settings.quietHoursStart settings.quietHoursEnd",
+      )
+      .lean();
+    const settings = user?.settings;
+    const to = settings?.alertEmail;
     if (!to) return false; // no address saved → alerts stay in-app
+    // the daily digest keeps its own hour; only immediate alerts honour this
+    if (
+      inQuietHours(new Date(), {
+        enabled: settings?.quietHoursEnabled ?? false,
+        start: settings?.quietHoursStart ?? 22,
+        end: settings?.quietHoursEnd ?? 7,
+      })
+    ) {
+      return false;
+    }
     const subject =
       alert.kind === "restock"
         ? `${alert.emoji} ${alert.title} is back in stock at ${alert.retailer}`

@@ -1,5 +1,6 @@
 import { ActivityEvent, User } from "../models/index.js";
 import { isPublicHttpUrl } from "./url-guard.js";
+import { inQuietHours } from "./quiet.js";
 
 /**
  * Out-of-app price-drop alerts: POST one JSON payload to the webhook the
@@ -58,11 +59,27 @@ export async function sendDropAlert(
 ): Promise<boolean> {
   try {
     if (!owner) return false; // ownerless demo rows have nobody to notify
-    const user = await User.findById(owner).select("settings.webhookUrl").lean();
-    const target = user?.settings?.webhookUrl;
+    const user = await User.findById(owner)
+      .select(
+        "settings.webhookUrl settings.quietHoursEnabled settings.quietHoursStart settings.quietHoursEnd",
+      )
+      .lean();
+    const settings = user?.settings;
+    const target = settings?.webhookUrl;
     // re-check at send time: the settings route already validated it, but a
     // doc written before that check must not become an internal POST
     if (!target || !isPublicHttpUrl(target)) return false;
+    // quiet hours silence the out-of-app copy only; the drop still lands in
+    // the in-app activity feed from the scan cycle
+    if (
+      inQuietHours(new Date(), {
+        enabled: settings?.quietHoursEnabled ?? false,
+        start: settings?.quietHoursStart ?? 22,
+        end: settings?.quietHoursEnd ?? 7,
+      })
+    ) {
+      return false;
+    }
 
     const text = message(alert);
     const res = await fetch(target, {

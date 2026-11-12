@@ -35,6 +35,7 @@ Built today:
 | CSV export | ✅ `GET /api/export/watchlist` and `GET /api/export/prices` download the watchlist or the retained price history; cells that look like spreadsheet formulas are defused |
 | Price floor signal | ✅ every watch row carries a `range` from its full retained price history (low/high over every stored point, while the trend still uses the newest 60) → an `at low` / `+N% over low` chip beside the trend, so “is this actually cheap?” is answerable without opening the chart |
 | Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit or a restock immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
+| Quiet hours | ✅ per-user UTC window set in Settings — immediate webhook and email alerts are skipped inside it, while in-app activity and the daily digest keep running |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
 ## Architecture

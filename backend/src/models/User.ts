@@ -20,6 +20,12 @@ const settingsSchema = new Schema(
     // confirmation gate the scan cycle checks before it reserves anything
     autoBuyDailyCap: { type: Number, default: 0, min: 0 },
     confirmBeforeBuy: { type: Boolean, default: false },
+    // immediate webhook/email alerts are skipped inside this UTC window;
+    // in-app activity and the daily digest are not affected. start === end
+    // is treated as "no window" rather than a 24-hour blackout.
+    quietHoursEnabled: { type: Boolean, default: false },
+    quietHoursStart: { type: Number, default: 22, min: 0, max: 23 },
+    quietHoursEnd: { type: Number, default: 7, min: 0, max: 23 },
   },
   { _id: false, versionKey: false },
 );

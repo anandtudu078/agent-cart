@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { autoBuyHoldReason } from "./guard.js";
+import { autoBuyHoldReason, heldBuyExpiresAt, HELD_BUY_TTL_MS } from "./guard.js";
 
 const base = {
   confirmBeforeBuy: false,
@@ -9,6 +9,15 @@ const base = {
   price: 100,
   discount: 0,
 };
+
+test("heldBuyExpiresAt: a hold lasts exactly one day", () => {
+  const now = new Date("2026-01-01T00:00:00Z");
+  assert.equal(HELD_BUY_TTL_MS, 24 * 60 * 60 * 1_000);
+  assert.equal(
+    heldBuyExpiresAt(now).toISOString(),
+    "2026-01-02T00:00:00.000Z",
+  );
+});
 
 test("autoBuyHoldReason: no guardrails set → allowed", () => {
   assert.equal(autoBuyHoldReason(base), null);

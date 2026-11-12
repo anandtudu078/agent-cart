@@ -30,7 +30,8 @@ Built today:
 | Out-of-app alerts | ✅ optional webhook (Discord/Slack/generic JSON) POSTed on every target hit and every back-in-stock — set it in Settings; internal/localhost targets are rejected |
 | Settlement | ✅ two legs beside each other — PayPal order/capture, and a Nano (XNO) leg that quotes the amount at the live rate and settles only once the ledger confirms the buyer's signed send block. No keys in the app: the buyer pays from their own wallet, the agent only reads the chain ([#17](https://github.com/anandtudu078/agent-cart/issues/17)) |
 | Natural-language commands | ✅ one input box on the watchlist — “watch Sony WH-1000XM5 now $328 under $300, auto-buy”, “pause Keychron K2”, “set target for Keychron K2 to $79” → `POST /api/agent/command`, parsed by the agent service (LLM when `OPENAI_API_KEY` is set, deterministic keyword fallback otherwise) and executed against the existing watch-item routes; every command lands in history + the activity feed |
-| Auto-buy guardrails | ✅ per-user safety net checked before every auto-buy reserve — a USD/day budget cap and a confirm-before-buy toggle, set in Settings; a held buy lands in History as `Auto-buy held` with the reason, and the row's cart button still reserves by hand |
+| Auto-buy guardrails | ✅ per-user safety net checked before every auto-buy reserve — a USD/day budget cap and a confirm-before-buy toggle, set in Settings; a held buy lands in History as `Auto-buy held` **and in the cart's Waiting-for-approval queue**, where one click reserves it at the price the agent saw (or dismisses it); the hold expires after 24h so a stale frozen price can never be approved later |
+| Price floor signal | ✅ every watch row carries a `range` from its recent price history (low/high over the last 60 observed points) → an `at low` / `+N% over low` chip beside the trend, so “is this actually cheap?” is answerable without opening the chart |
 | Email alerts + daily digest | ✅ Resend-backed: the agent emails a target hit or a restock immediately and sends one daily digest of everything it found in the last 24h (`RESEND_API_KEY` unset = off, exactly like the other legs); address set per user in Settings |
 | Multi-retailer comparison | ✅ one product, up to 5 retailers (`offers[]`) — the agent polls each offer url and the cheapest one becomes the row's price/retailer, with a `Cheapest offer changed` entry in history when the winner swaps |
 
@@ -120,7 +121,7 @@ returns 401.
 - `GET /api/health` — liveness + database state
 - `GET /api/activity/stream` — SSE tail of activity events (replays last 15, then follows inserts)
 - `POST /api/activity` — append a log line `{level: info|ok|warn|buy, message, source?}`
-- `GET /api/watch-items` — full watchlist, newest first; each row carries a `trend` verdict (`rising | falling | flat | insufficient`) computed from its own price history — the buy-now-or-wait signal behind the badge in the Status column
+- `GET /api/watch-items` — full watchlist, newest first; each row carries a `trend` verdict (`rising | falling | flat | insufficient`) and a `range` (`{low, high, points, aboveLowPct}`, null under 4 observed points) computed from its own price history — the buy-now-or-wait and price-floor signals behind the Status-column badges
 - `POST /api/watch-items` — start watching `{title, retailer, price, targetPrice, emoji?, url?, pollIntervalSec?, offers?}` — with a `url`, the agent fetches that page for the live price; without one it simulates. Each item is only re-checked when its own `pollIntervalSec` interval elapses (default 30s, min 5s); items not yet due are skipped for the cycle. `offers` is an optional array of `{retailer, price, url?}` (max 5) for the same product: the agent polls every offer and the headline `retailer`/`price`/`url` always mirror the cheapest one, so the chart, cart and webhook need no extra input
 - `GET /api/watch-items/:id/series` — price points for the chart, oldest first (`?limit=1..500`)
 - `PATCH /api/watch-items/:id` — update `price`, `targetPrice`, `deltaPct`, `status`, `autoBuy`, `pollIntervalSec`, or replace `offers` (which re-picks the cheapest headline)
@@ -128,12 +129,13 @@ returns 401.
 - `GET /api/agent/status` — scan-loop state: running flag, interval, last cycle summary
 - `POST /api/agent/scan` — run one scan cycle now (409 if one is already running)
 - `POST /api/agent/command` — run one plain-language command `{text}` (max 500 chars): `watch … under $X`, `pause|resume <item>`, `set target for <item> to $X`, `auto-buy <item>`. The body is parsed by the agent service against your own watchlist (for title matching), re-validated server-side, then executed — creating or patching the watch item and recording a `history` entry + activity line. Answers `{action, reply, item?}`; 422 carries the agent's `reply` when it didn't understand, 503 when the agent service is unreachable
-- `GET /api/cart` — reserved cart items + `subtotal`, `discount`, `total`
+- `GET /api/cart` — reserved cart items + `subtotal`, `discount`, `total`, plus `held`: the live auto-buys your guardrails stopped, each with its `holdReason` (held rows are not part of the totals, and only holds inside their 24h window are returned)
 - `GET /api/coupons` — coupon codes the agent knows (`?retailer=` narrows to one retailer)
 - `POST /api/cart/:id/coupon` — apply `{code}` to a reserved entry (404 when invalid for that retailer)
 - `DELETE /api/cart/:id/coupon` — remove the applied code
 - `POST /api/cart` — reserve a watch item `{watchItemId}` (409 if already reserved)
-- `DELETE /api/cart/:id` — release a reserved item
+- `POST /api/cart/:id/approve` — turn a `held` auto-buy into a real reservation (409 when it is not held, the item is already reserved, or the 24h hold has expired). A human approval deliberately skips the confirm/cap check: the cap constrains autonomous spending, not the person clicking approve
+- `DELETE /api/cart/:id` — release a reserved item, or dismiss a held one
 - `POST /api/cart/:id/checkout` — create a PayPal order, returns `{orderId, approvalUrl}` (501 when PayPal creds are unset)
 - `POST /api/cart/:id/capture` — capture an approved PayPal order
 - `POST /api/cart/:id/nano-quote` — freeze the XNO amount for a reserved entry: returns `{address, amountXno, amountRaw, rate, totalUsd, expiresAt}`, quoted at the live rate (CoinGecko, 60s cache, `XNO_USD_RATE` fallback) and floored to 8 decimals so the amount displayed is the amount demanded. 501 without `NANO_ADDRESS`, 409 for a non-USD total, 400 when the total floors to zero units
@@ -149,11 +151,11 @@ Agent service (Python, port 8000, no auth — keep it on localhost):
 
 ## Data model
 
-- **watch_items** — product, retailer, current price vs `targetPrice`, status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`, and the last availability verdict `inStock` — `false` when the page reported it sold out, which holds off `autoBuy` until it is back. `offers[]` holds the other retailers for the same product (`retailer`, `url`, `price` with its own fetch outcome); the headline fields above are re-pointed at the cheapest offer every cycle — empty `offers` = the classic single-retailer row
+- **watch_items** — product, retailer, current price vs `targetPrice` (the API also returns a `trend` and observed `range` computed from `price_points`, not stored on the row), status `watching | drop | paused`, and an `autoBuy` flag (scan cycle reserves it into the cart the moment it hits target). Also carries the last fetch outcome: `fetchStatus ok | stale | error | simulated` plus `lastFetchError` / `fetchedAt`, and the last availability verdict `inStock` — `false` when the page reported it sold out, which holds off `autoBuy` until it is back. `offers[]` holds the other retailers for the same product (`retailer`, `url`, `price` with its own fetch outcome); the headline fields above are re-pointed at the cheapest offer every cycle — empty `offers` = the classic single-retailer row
 - **price_points** — one row per observed price (`item`, `price`, `at`, `source live | agent-service | simulated`), auto-expire after 90 days; the chart reads these
 - **history_entries** — decisions the agent made: `buy | alert | scan | info`
 - **activity_events** — raw log lines (`info | ok | warn | buy`), auto-expire after 30 days
-- **cart_entries** — watch items held in the cart (`reserved | checked_out`) with the PayPal order id, a `capturedAt` once the payment settles (the daily auto-buy cap counts spend at capture time), plus any applied `couponCode` / `couponDiscount`. The Nano settle leg freezes its own quote on the row (`nanoAddress`, `nanoQuotedXno`, `nanoAmountRaw`, `nanoRate`, `nanoQuoteExpiresAt`) and records the confirmed `nanoBlockHash` once the ledger verifies it
+- **cart_entries** — watch items held in the cart (`held | reserved | checked_out`) with the PayPal order id, a `holdReason` on rows the guardrails stopped (cleared on approval) plus the `holdExpiresAt` deadline those rows carry — a TTL index removes a held row after 24h, and both the cart read and the approve route re-check the deadline in case the sweep lags a `capturedAt` once the payment settles (the daily auto-buy cap counts spend at capture time), plus any applied `couponCode` / `couponDiscount`. The Nano settle leg freezes its own quote on the row (`nanoAddress`, `nanoQuotedXno`, `nanoAmountRaw`, `nanoRate`, `nanoQuoteExpiresAt`) and records the confirmed `nanoBlockHash` once the ledger verifies it
 
 ## Security
 

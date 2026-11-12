@@ -10,7 +10,12 @@ import {
   Zap,
 } from "lucide-react";
 import { useCart } from "@/lib/use-cart";
-import { useWatchItems, type FetchStatus, type Trend } from "@/lib/use-watch-items";
+import {
+  useWatchItems,
+  type FetchStatus,
+  type PriceRange,
+  type Trend,
+} from "@/lib/use-watch-items";
 import { AddWatchItemForm } from "./add-watch-item-form";
 import { CommandBar } from "./command-bar";
 import { PriceChart } from "./price-chart";
@@ -94,6 +99,26 @@ function TrendChip({ trend }: { trend: Trend }) {
       className={`rounded-full border px-2 py-0.5 text-[11px] ${className}`}
     >
       {label}
+    </span>
+  );
+}
+
+/** How today's price compares with the lowest the agent has seen. */
+function RangeChip({ range }: { range: PriceRange | null }) {
+  if (!range) return null;
+  const atLow = range.aboveLowPct <= 1;
+  return (
+    <span
+      title={`Lowest observed ${formatPrice(range.low)} · highest ${formatPrice(
+        range.high,
+      )} across ${range.points} scans`}
+      className={`rounded-full border px-2 py-0.5 text-[11px] ${
+        atLow
+          ? "border-emerald-500/40 text-emerald-400"
+          : "border-panel-border text-muted"
+      }`}
+    >
+      {atLow ? "at low" : `+${range.aboveLowPct.toFixed(1)}% over low`}
     </span>
   );
 }
@@ -205,6 +230,7 @@ export function Watchlist() {
                 <FetchChip status={item.fetchStatus} error={item.lastFetchError} />
                 <StockChip inStock={item.inStock} />
                 <TrendChip trend={item.trend} />
+                <RangeChip range={item.range} />
                 </span>
               </td>
               <td className="px-4 py-3 text-right font-mono text-[11px] text-muted">

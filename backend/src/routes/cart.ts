@@ -57,14 +57,22 @@ cartRouter.get("/coupons", (req, res) => {
   res.json({ coupons: listCoupons(retailer) });
 });
 
-/** GET /api/cart — reserved items + subtotal, discount, total. */
+/**
+ * GET /api/cart — reserved items + subtotal/discount/total, plus the `held`
+ * queue of auto-buys the guardrails stopped. Held rows are not committed
+ * money, so they stay out of the totals.
+ */
 cartRouter.get("/cart", async (req, res) => {
-  const entries = await CartEntry.find({
-    status: "reserved",
-    ...ownedByUser(req.userId!),
-  })
-    .sort({ createdAt: -1 })
-    .lean();
+  const owner = ownedByUser(req.userId!);
+  const [entries, held] = await Promise.all([
+    CartEntry.find({ status: "reserved", ...owner })
+      .sort({ createdAt: -1 })
+      .lean(),
+    // live holds only — the TTL sweep may lag behind the 24h deadline
+    CartEntry.find({ status: "held", holdExpiresAt: { $gt: new Date() }, ...owner })
+      .sort({ createdAt: -1 })
+      .lean(),
+  ]);
   const subtotal = entries.reduce((sum, entry) => sum + entry.price, 0);
   const discount = entries.reduce(
     (sum, entry) => sum + (entry.couponDiscount ?? 0),
@@ -72,10 +80,73 @@ cartRouter.get("/cart", async (req, res) => {
   );
   res.json({
     entries,
+    held,
     subtotal: round2(subtotal),
     discount: round2(discount),
     total: round2(subtotal - discount),
   });
+});
+
+/**
+ * POST /api/cart/:id/approve — turn a held auto-buy into a real reservation.
+ *
+ * The guardrails only constrain the agent: a human approving the exact price
+ * they were shown is not an autonomous purchase, so this deliberately skips
+ * the confirm/cap check (the cart's manual reserve button does the same).
+ */
+cartRouter.post("/cart/:id/approve", async (req, res) => {
+  const entry = await CartEntry.findById(req.params.id);
+  if (!entry) {
+    res.status(404).json({ error: "cart entry not found" });
+    return;
+  }
+  if (!isOwnedBy(entry, req.userId!)) {
+    res.status(403).json({ error: "not your cart entry" });
+    return;
+  }
+  if (entry.status !== "held") {
+    res.status(409).json({ error: "entry is not waiting for approval" });
+    return;
+  }
+  if (entry.holdExpiresAt && entry.holdExpiresAt.getTime() <= Date.now()) {
+    res.status(409).json({
+      error:
+        "this held buy expired — the frozen price is stale; re-check the item and let the agent hold it again",
+    });
+    return;
+  }
+  const reserved = await CartEntry.findOne({
+    watchItem: entry.watchItem,
+    status: "reserved",
+    _id: { $ne: entry._id },
+  });
+  if (reserved) {
+    res.status(409).json({ error: "item is already reserved in the cart" });
+    return;
+  }
+
+  const reason = entry.holdReason;
+  entry.status = "reserved";
+  entry.holdReason = undefined;
+  entry.holdExpiresAt = undefined;
+  await entry.save();
+  await HistoryEntry.create({
+    item: entry.watchItem,
+    itemTitle: entry.itemTitle,
+    action: "Auto-buy approved",
+    detail: `Approved by hand at $${entry.price.toFixed(2)} from ${entry.retailer}${
+      reason ? ` (was held: ${reason})` : ""
+    } — review and check out`,
+    kind: "buy",
+    owner: entry.owner,
+  });
+  await log(
+    "buy",
+    `auto-buy approved: ${entry.itemTitle} — $${entry.price.toFixed(2)} at ${entry.retailer}`,
+    false,
+    entry.owner,
+  );
+  res.json({ entry });
 });
 
 /** POST /api/cart/:id/coupon — apply `{code}` to a reserved entry. */
@@ -240,8 +311,14 @@ cartRouter.delete("/cart/:id", async (req, res) => {
     res.status(403).json({ error: "not your cart entry" });
     return;
   }
+  const wasHeld = entry.status === "held";
   await entry.deleteOne();
-  await log("info", `cart released: ${entry.itemTitle}`, false, entry.owner);
+  await log(
+    "info",
+    `${wasHeld ? "held buy dismissed" : "cart released"}: ${entry.itemTitle}`,
+    false,
+    entry.owner,
+  );
   res.json({ ok: true });
 });
 

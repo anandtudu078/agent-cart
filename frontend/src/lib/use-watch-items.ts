@@ -8,6 +8,15 @@ export type WatchStatus = "watching" | "drop" | "paused";
 /** Where the last price came from: live fetch, or why it wasn't. */
 export type FetchStatus = "ok" | "stale" | "error" | "simulated";
 
+/** Observed price range — is today's price actually near its floor? */
+export interface PriceRange {
+  low: number;
+  high: number;
+  points: number;
+  /** Current price above the lowest observed, in % (0 = at the low). */
+  aboveLowPct: number;
+}
+
 /** Buy-now-or-wait verdict from the item's own price history. */
 export type TrendVerdict = "rising" | "falling" | "flat" | "insufficient";
 
@@ -42,6 +51,7 @@ export interface WatchedItem {
   /** false = the last live fetch reported the item sold out. */
   inStock: boolean;
   trend: Trend;
+  range: PriceRange | null;
   updated: string;
 }
 
@@ -65,6 +75,7 @@ interface RawItem {
   lastFetchError?: string;
   inStock?: boolean;
   trend?: Trend;
+  range?: PriceRange | null;
   lastCheckedAt?: string;
   createdAt?: string;
 }
@@ -125,6 +136,7 @@ export function useWatchItems() {
             lastFetchError: item.lastFetchError,
             inStock: item.inStock ?? true,
             trend: item.trend ?? { verdict: "insufficient", changePct: 0 },
+            range: item.range ?? null,
             updated: timeAgo(item.lastCheckedAt ?? item.createdAt),
           })),
         );

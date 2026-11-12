@@ -13,7 +13,7 @@ import { fetchPriceUpdates } from "./service.js";
 import { fetchLivePrice, type PriceFetch } from "./fetch-price.js";
 import { sendDropAlert } from "./webhook.js";
 import { sendDropEmail } from "./email.js";
-import { autoBuyHoldReason } from "./guard.js";
+import { autoBuyHoldReason, heldBuyExpiresAt } from "./guard.js";
 import { bestCoupon, couponDiscount } from "../coupons.js";
 import { createEntryOrder } from "../paypal-order.js";
 
@@ -140,14 +140,22 @@ async function reserveIntoCart(
   item: WatchItemDoc,
   price: number,
 ): Promise<string | undefined> {
-  const held = await CartEntry.findOne({
+  // a held buy awaiting approval counts as "already handled" — don't queue a
+  // second copy of the same item on every restock cycle
+  const existing = await CartEntry.findOne({
     watchItem: item._id,
-    status: "reserved",
+    $or: [
+      { status: "reserved" },
+      // an expired hold no longer blocks a fresh one (the TTL sweep may lag)
+      { status: "held", holdExpiresAt: { $gt: new Date() } },
+    ],
   });
-  if (held) {
+  if (existing) {
     await log(
       "info",
-      `auto-buy skipped: ${item.title} is already in the cart`,
+      existing.status === "held"
+        ? `auto-buy skipped: ${item.title} is already waiting for approval`
+        : `auto-buy skipped: ${item.title} is already in the cart`,
       false,
       item.owner,
     );
@@ -199,18 +207,34 @@ async function reserveIntoCart(
     discount,
   });
   if (holdReason) {
+    // park it in the cart's approval queue at the target price, so the user
+    // can act on the hold in one click instead of hunting for the row
+    await CartEntry.create({
+      watchItem: item._id,
+      itemTitle: item.title,
+      retailer: item.retailer,
+      emoji: item.emoji,
+      price,
+      currency: item.currency,
+      status: "held",
+      holdReason,
+      holdExpiresAt: heldBuyExpiresAt(),
+      couponCode: coupon?.code,
+      couponDiscount: discount,
+      owner: item.owner,
+    });
     await HistoryEntry.create({
       item: item._id,
       itemTitle: item.title,
       action: "Auto-buy held",
-      detail: `Target hit at $${price.toFixed(2)} but ${holdReason} — nothing reserved`,
+      detail: `Target hit at $${price.toFixed(2)} but ${holdReason} — waiting for your approval in the cart`,
       kind: "alert",
       price,
       owner: item.owner,
     });
     await log(
       "warn",
-      `auto-buy held: ${item.title} — ${holdReason}`,
+      `auto-buy held: ${item.title} — ${holdReason} (approve from the cart)`,
       false,
       item.owner,
     );

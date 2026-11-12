@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { BellRing, Mail, ShieldCheck, Trash2, Webhook } from "lucide-react";
+import {
+  BellRing,
+  Mail,
+  Moon,
+  ShieldCheck,
+  Trash2,
+  Webhook,
+} from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useSettings } from "@/lib/use-settings";
 
@@ -19,6 +26,10 @@ export default function SettingsPage() {
   const alertEmail = emailDraft ?? settings.alertEmail;
   const [capDraft, setCapDraft] = useState<string | null>(null);
   const autoBuyDailyCap = capDraft ?? String(settings.autoBuyDailyCap);
+  const [quietStartDraft, setQuietStartDraft] = useState<string | null>(null);
+  const [quietEndDraft, setQuietEndDraft] = useState<string | null>(null);
+  const quietStart = quietStartDraft ?? String(settings.quietHoursStart);
+  const quietEnd = quietEndDraft ?? String(settings.quietHoursEnd);
   const router = useRouter();
 
   async function saveEmail(event: React.FormEvent) {
@@ -66,6 +77,38 @@ export default function SettingsPage() {
           : "Webhook cleared — alerts stay in the app."),
     );
     if (!err) setWebhookDraft(null);
+  }
+
+  async function saveQuietHours(event: React.FormEvent) {
+    event.preventDefault();
+    const start = Number(quietStart);
+    const end = Number(quietEnd);
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      start > 23 ||
+      end < 0 ||
+      end > 23
+    ) {
+      setNotice("Quiet hours must be whole hours from 0 to 23 (UTC).");
+      return;
+    }
+    if (start === end) {
+      setNotice(
+        "Quiet hours need different start and end times — turn the toggle off to disable them.",
+      );
+      return;
+    }
+    const err = await save({ quietHoursStart: start, quietHoursEnd: end });
+    setNotice(
+      err ??
+        `Quiet hours saved — immediate alerts pause from ${String(start).padStart(2, "0")}:00 to ${String(end).padStart(2, "0")}:00 UTC.`,
+    );
+    if (!err) {
+      setQuietStartDraft(null);
+      setQuietEndDraft(null);
+    }
   }
 
   async function requestNotifications() {
@@ -260,6 +303,76 @@ export default function SettingsPage() {
             className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10"
           >
             Save email
+          </button>
+        </form>
+      </section>
+
+      {/* Quiet hours */}
+      <section className="rounded-xl border border-panel-border bg-panel/60 p-6">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Moon className="h-4 w-4 text-cyan-400" aria-hidden />
+          Quiet hours
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          Immediate webhook and email alerts are skipped inside this window
+          (UTC). In-app activity and the daily digest are unchanged. A window
+          that starts before it ends covers the same day; a later start wraps
+          past midnight.
+        </p>
+        <label className="mt-4 flex items-center gap-2 text-sm text-zinc-300">
+          <input
+            type="checkbox"
+            checked={settings.quietHoursEnabled}
+            onChange={(e) => {
+              const on = e.target.checked;
+              void save({ quietHoursEnabled: on }).then((err) =>
+                setNotice(
+                  err ??
+                    (on
+                      ? "Quiet hours on — immediate webhook and email alerts pause during the window."
+                      : "Quiet hours off — immediate alerts send any time."),
+                ),
+              );
+            }}
+            className="h-4 w-4 accent-cyan-500"
+          />
+          Pause immediate webhook and email alerts during quiet hours
+        </label>
+        <form
+          onSubmit={(event) => void saveQuietHours(event)}
+          className="mt-4 flex flex-wrap items-end gap-2"
+        >
+          <label className="text-xs text-muted">
+            From (UTC)
+            <input
+              type="number"
+              min="0"
+              max="23"
+              step="1"
+              value={quietStart}
+              onChange={(e) => setQuietStartDraft(e.target.value)}
+              aria-label="Quiet hours start hour (UTC)"
+              className="mt-1.5 w-24 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+            />
+          </label>
+          <label className="text-xs text-muted">
+            To (UTC)
+            <input
+              type="number"
+              min="0"
+              max="23"
+              step="1"
+              value={quietEnd}
+              onChange={(e) => setQuietEndDraft(e.target.value)}
+              aria-label="Quiet hours end hour (UTC)"
+              className="mt-1.5 w-24 rounded-md border border-panel-border bg-[#0c0c12] px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-500/60"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md border border-cyan-500/40 px-4 py-2 text-sm text-cyan-400 transition-colors hover:bg-cyan-500/10"
+          >
+            Save hours
           </button>
         </form>
       </section>

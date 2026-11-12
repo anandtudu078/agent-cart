@@ -13,6 +13,7 @@ import { historyRouter } from "./routes/history.js";
 import { agentRouter } from "./routes/agent.js";
 import { commandRouter } from "./routes/command.js";
 import { cartRouter } from "./routes/cart.js";
+import { exportRouter } from "./routes/export.js";
 import { startAgentLoop } from "./agent/cycle.js";
 import { startDigestTimer } from "./agent/digest.js";
 
@@ -55,6 +56,7 @@ app.use("/api", requireAuth, historyRouter);
 app.use("/api", requireAuth, agentRouter);
 app.use("/api", requireAuth, commandRouter);
 app.use("/api", requireAuth, cartRouter);
+app.use("/api", requireAuth, exportRouter);
 
 // 404 fallback for unknown API routes
 app.use("/api", (_req, res) => {

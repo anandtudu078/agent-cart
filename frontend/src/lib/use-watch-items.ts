@@ -207,6 +207,8 @@ export function useWatchItems() {
     [refresh],
   );
 
+  // shortcut: one PATCH per row — the API caps writes at 60/min, so a very
+  // large selection can partially fail; add a bulk endpoint when lists grow
   /** PATCH many items at once (bulk pause/resume); error message or null. */
   const setMany = useCallback(
     async (

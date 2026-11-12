@@ -10,6 +10,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import { useCart } from "@/lib/use-cart";
 import {
   useWatchItems,
@@ -280,6 +281,20 @@ export function Watchlist() {
           <option value="target-gap">closest to target</option>
           <option value="drop">biggest 24h drop</option>
         </select>
+        <a
+          href={`${API_BASE}/api/export/watchlist`}
+          title="Download the watchlist as CSV"
+          className="rounded-md border border-panel-border px-2 py-2 text-xs text-muted transition-colors hover:text-zinc-200"
+        >
+          export watchlist
+        </a>
+        <a
+          href={`${API_BASE}/api/export/prices`}
+          title="Download the retained price history as CSV"
+          className="rounded-md border border-panel-border px-2 py-2 text-xs text-muted transition-colors hover:text-zinc-200"
+        >
+          export prices
+        </a>
         {(query !== "" || statusFilter !== "all" || sortBy !== "recent") && (
           <button
             type="button"

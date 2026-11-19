@@ -216,22 +216,25 @@ export function useWatchItems() {
       patch: { status?: WatchStatus },
     ): Promise<string | null> => {
       try {
-        const results = await Promise.all(
-          ids.map((id) =>
-            fetch(`${API_BASE}/api/watch-items/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              credentials: "include",
-              body: JSON.stringify(patch),
-            }).then((res) => res.ok),
-          ),
-        );
+        const res = await fetch(`${API_BASE}/api/watch-items/bulk`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ ids, patch }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          };
+          return data?.error ?? "Could not bulk-update items";
+        }
+        const { results } = (await res.json()) as { results: boolean[] };
         refresh();
         const failed = results.filter((ok) => !ok).length;
         return failed
           ? `${failed} item${failed === 1 ? "" : "s"} could not be updated`
           : null;
-      } catch {
+      } catch (err) {
         refresh();
         return "Could not reach the API (http://localhost:4000)";
       }
@@ -243,20 +246,25 @@ export function useWatchItems() {
   const removeMany = useCallback(
     async (ids: string[]): Promise<string | null> => {
       try {
-        const results = await Promise.all(
-          ids.map((id) =>
-            fetch(`${API_BASE}/api/watch-items/${id}`, {
-              method: "DELETE",
-              credentials: "include",
-            }).then((res) => res.ok),
-          ),
-        );
+        const res = await fetch(`${API_BASE}/api/watch-items/bulk`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          };
+          return data?.error ?? "Could not bulk-remove items";
+        }
+        const { results } = (await res.json()) as { results: boolean[] };
         refresh();
         const failed = results.filter((ok) => !ok).length;
         return failed
           ? `${failed} item${failed === 1 ? "" : "s"} could not be removed`
           : null;
-      } catch {
+      } catch (err) {
         refresh();
         return "Could not reach the API (http://localhost:4000)";
       }

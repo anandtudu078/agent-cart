@@ -14,6 +14,49 @@ const DEFAULT_LIMIT = 30;
  * GET /api/history — recent agent decisions, newest first.
  * Query: ?limit=1..100  &kind=buy|alert|scan|info  &item=<watchItemId>
  */
+/** GET /api/history/item/:itemId — price history for a specific watch item.
+ * Query: ?limit=1..100  &kind=buy|alert|scan|info
+ */
+historyRouter.get("/history/item/:itemId", async (req, res) => {
+  const { itemId } = req.params;
+  if (!mongoose.isValidObjectId(itemId)) {
+    res.status(400).json({ error: "itemId must be a valid watch item id" });
+    return;
+  }
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), MAX_LIMIT)
+    : DEFAULT_LIMIT;
+  const kind = req.query.kind;
+  if (kind !== undefined && typeof kind !== "string") {
+    res.status(400).json({ error: "kind must be a single string value" });
+    return;
+  }
+  if (kind && !KINDS.includes(kind as (typeof KINDS)[number])) {
+    res.status(400).json({ error: `kind must be one of ${KINDS.join(", ")}` });
+    return;
+  }
+
+  const filter: {
+    kind?: (typeof KINDS)[number];
+    item?: mongoose.Types.ObjectId;
+  } = { item: new mongoose.Types.ObjectId(itemId) };
+  if (kind) filter.kind = kind as (typeof KINDS)[number];
+
+  // ownerless rows are shared demo data; everything else stays per-account
+  const entries = await HistoryEntry.find({
+    ...filter,
+    ...ownedByUser(req.userId!),
+  })
+    .sort({ occurredAt: -1 })
+    .limit(limit)
+    .lean();
+  res.json({ entries });
+});
+
+/** GET /api/history — recent agent decisions, newest first.
+ * Query: ?limit=1..100  &kind=buy|alert|scan|info  &item=<watchItemId>
+ */
 historyRouter.get("/history", async (req, res) => {
   const rawLimit = Number(req.query.limit);
   const limit = Number.isFinite(rawLimit)

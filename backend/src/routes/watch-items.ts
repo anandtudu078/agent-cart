@@ -235,6 +235,33 @@ watchItemsRouter.get("/watch-items", async (req, res) => {
     .sort({ createdAt: -1 })
     .lean();
   const signals = await historyByItem(items.map((item) => item._id));
+
+  // Persist trend and range to the database so future fetches don't recompute
+  const updateOps = items.map((item) => {
+    const signal = signals.get(String(item._id));
+    // Always persist trend/range from the computed signal; defaults to insufficient when no history
+    return WatchItem.updateOne(
+      { _id: item._id },
+      {
+        $set: {
+          trend: {
+            verdict: signal?.trend?.verdict ?? "insufficient",
+            changePct: signal?.trend?.changePct ?? 0,
+          },
+          range: {
+            low: signal?.range?.low ?? 0,
+            high: signal?.range?.high ?? 0,
+            points: signal?.range?.points ?? 0,
+            aboveLowPct: signal?.range?.aboveLowPct ?? 0,
+          },
+        },
+      }
+    );
+  });
+
+  // Run updates in parallel (non-blocking, best-effort)
+  await Promise.all(updateOps);
+
   res.json({
     items: items.map((item) => {
       const signal = signals.get(String(item._id));

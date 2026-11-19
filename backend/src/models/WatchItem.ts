@@ -65,6 +65,27 @@ export const watchItemSchema = new Schema(
     inStock: { type: Boolean, default: true },
     // optional so seeded demo rows stay shared; null = visible to any signed-in user
     owner: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    // trend verdict from price history (calculated from HistoryEntry data)
+    trend: {
+      type: {
+        verdict: {
+          type: String,
+          enum: ["rising", "falling", "flat", "insufficient"],
+        },
+        changePct: { type: Number },
+      },
+      default: () => ({ verdict: "insufficient", changePct: 0 }),
+    },
+    // observed price range low/high/points from history
+    range: {
+      type: {
+        low: { type: Number, default: 0 },
+        high: { type: Number, default: 0 },
+        points: { type: Number, default: 0 },
+        aboveLowPct: { type: Number, default: 0 },
+      },
+      default: () => ({ low: 0, high: 0, points: 0, aboveLowPct: 0 }),
+    },
   },
   {
     timestamps: true,

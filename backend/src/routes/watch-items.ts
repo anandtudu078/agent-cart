@@ -457,3 +457,128 @@ watchItemsRouter.delete("/watch-items/:id", async (req, res) => {
   await PricePoint.deleteMany({ item: item._id });
   res.json({ ok: true });
 });
+
+/** PATCH /api/watch-items/bulk — update multiple watch items at once.
+ * Body: { ids: string[], patch: { status?: WatchStatus } }
+ * Returns array of ok booleans in the same order as ids.
+ */
+watchItemsRouter.patch("/watch-items/bulk", async (req, res) => {
+  const { ids, patch } = req.body as {
+    ids: string[];
+    patch: {
+      status?: (typeof STATUSES)[number];
+      targetPrice?: number;
+      autoBuy?: boolean;
+      pollIntervalSec?: number;
+    };
+  };
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: "ids array is required" });
+    return;
+  }
+  if (!patch) {
+    res.status(400).json({ error: "patch object is required" });
+    return;
+  }
+
+  // Validate status if provided
+  if (patch.status && !STATUSES.includes(patch.status as (typeof STATUSES)[number])) {
+    res.status(400).json({ error: `status must be one of ${STATUSES.join(", ")}` });
+    return;
+  }
+
+  // Find all items, validate ownership
+  const objectIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+  const items = await WatchItem.find({
+    _id: { $in: objectIds },
+    owner: req.userId,
+  }).lean();
+
+  // Map by id for quick lookup
+  const itemMap = new Map(
+    items.map((item) => [item._id.toString(), item])
+  );
+
+  // Process each id, mark missing/unauthorized as failed
+  const results = await Promise.all(
+    ids.map(async (id, i) => {
+      const objectId = objectIds[i];
+      const item = itemMap.get(id);
+
+      if (!item) {
+        // Item not found or not owned - return false
+        return false;
+      }
+
+      // Apply patches
+      if (patch.status !== undefined) item.status = patch.status;
+      if (patch.targetPrice !== undefined) item.targetPrice = patch.targetPrice;
+      if (patch.autoBuy !== undefined) item.autoBuy = patch.autoBuy;
+      if (patch.pollIntervalSec !== undefined) {
+        if (
+          typeof patch.pollIntervalSec === "number" &&
+          Number.isFinite(patch.pollIntervalSec)
+        ) {
+          item.pollIntervalSec = Math.min(
+            86_400,
+            Math.max(5, Math.trunc(patch.pollIntervalSec)),
+          );
+        }
+      }
+
+      item.lastCheckedAt = new Date();
+      await item.save();
+
+      return true;
+    }),
+  );
+
+  res.json({ results });
+});
+
+/** DELETE /api/watch-items/bulk — stop watching multiple items at once.
+ * Body: { ids: string[] }
+ * Returns array of ok booleans in the same order as ids.
+ */
+watchItemsRouter.delete("/watch-items/bulk", async (req, res) => {
+  const { ids } = req.body as { ids: string[] };
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400).json({ error: "ids array is required" });
+    return;
+  }
+
+  const objectIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+
+  // Find items owned by user
+  const items = await WatchItem.find({
+    _id: { $in: objectIds },
+    owner: req.userId,
+  }).lean();
+
+  const itemMap = new Map(
+    items.map((item) => [item._id.toString(), item])
+  );
+
+  // Delete items that belong to user, track which ids were found
+  const results = await Promise.all(
+    ids.map(async (id) => {
+      const objectId = objectIds.find((oid) => oid.toString() === id);
+      const item = itemMap.get(id);
+
+      if (!item) {
+        // Item not found or not owned
+        return false;
+      }
+
+      await item.deleteOne();
+      // drop the chart data with it — otherwise points linger until the TTL
+      await PricePoint.deleteMany({ item: item._id });
+
+      return true;
+    }),
+  );
+
+  res.json({ results });
+});

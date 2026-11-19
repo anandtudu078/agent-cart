@@ -284,5 +284,46 @@ export function useWatchItems() {
     [],
   );
 
-  return { items, loading, refresh, add, remove, setItem, setMany, removeMany };
+  /** Get price history for a specific watch item. */
+  const getPriceHistory = useCallback(
+    async (options: { limit?: number; kind?: "buy" | "alert" | "scan" | "info" } = {}) => {
+      const { limit = 30, kind } = options;
+      const url = new URL(`${API_BASE}/api/history/item/${items[0]?.id ?? ""}`); // fallback
+      url.searchParams.set("limit", String(limit));
+      if (kind) url.searchParams.set("kind", kind);
+      try {
+        const res = await fetch(url.toString(), { credentials: "include" });
+        if (!res.ok) throw new Error("Failed to fetch price history");
+        return await res.json();
+      } catch (err) {
+        console.error("Price history error:", err);
+        return null;
+      }
+    },
+    [items],
+  );
+
+  /** Open price history section for a watch item. */
+  const openPriceHistory = useCallback(
+    (itemId: string, options?: { limit?: number; kind?: "buy" | "alert" | "scan" | "info" }) => {
+      // Could navigate to a dedicated history page or open a modal
+      // For now, console log (or integrate with existing refresh)
+      console.log("Price history requested for item:", itemId, options);
+    },
+    [],
+  );
+
+  return {
+    items,
+    loading,
+    refresh,
+    add,
+    remove,
+    setItem,
+    setMany,
+    removeMany,
+    openPriceHistory,
+    getPriceHistory,
+  };
+};
 }
